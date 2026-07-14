@@ -500,16 +500,27 @@ const mem={settings:new Map(),inspections:new Map()};
 let SUPA=null; // {url,key}
 function b64urlDecode(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return decodeURIComponent(escape(atob(s)));}
 function b64urlEncode(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+/* Fest eingebaute Standard-Cloud: der nackte Link verbindet sich überall sofort.
+   (Hinweis: Schlüssel liegt damit im öffentlichen Code.) */
+const DEFAULT_SUPA={
+  url:'https://prpxpfgauziuszkiirlq.supabase.co',
+  key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBycHhwZmdhdXppdXN6a2lpcmxxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxOTc0NjAsImV4cCI6MjA5MTc3MzQ2MH0.45B3RyojvOcZblLkcd9LwIzYtD338m3uHXJ6g5WrCu0'
+};
 function ladeSupaConfig(){
   try{
     const m=location.hash.match(/cfg=([^&]+)/);
     if(m){
       const cfg=JSON.parse(b64urlDecode(m[1]));
-      if(cfg&&cfg.url&&cfg.key) localStorage.setItem('spk_supa',JSON.stringify({url:cfg.url,key:cfg.key}));
+      if(cfg&&cfg.url&&cfg.key){localStorage.setItem('spk_supa',JSON.stringify({url:cfg.url,key:cfg.key}));localStorage.removeItem('spk_local');}
       history.replaceState(null,'',location.pathname+location.search);
     }
   }catch(e){console.warn('Einladungslink ungültig:',e);}
-  try{const s=localStorage.getItem('spk_supa'); if(s) SUPA=JSON.parse(s);}catch(e){}
+  try{
+    const s=localStorage.getItem('spk_supa');
+    if(s){ SUPA=JSON.parse(s); }
+    else if(localStorage.getItem('spk_local')==='1'){ SUPA=null; }
+    else if(DEFAULT_SUPA&&DEFAULT_SUPA.url){ SUPA=DEFAULT_SUPA; }
+  }catch(e){}
 }
 function cfgLink(){
   return location.origin+location.pathname+'#cfg='+b64urlEncode(JSON.stringify({url:SUPA.url,key:SUPA.key}));
@@ -861,6 +872,7 @@ $('#btnCloudConnect').onclick=async()=>{
   try{
     await supaFetch('spk_settings?select=key&limit=1');
     localStorage.setItem('spk_supa',JSON.stringify(SUPA));
+    localStorage.removeItem('spk_local');
     toast('Mit Cloud verbunden ✓');
     await ladeStammdaten(); resetFormular(); await aktualisiereBadge(); renderCloudUI();
   }catch(err){
@@ -870,7 +882,7 @@ $('#btnCloudConnect').onclick=async()=>{
 };
 $('#btnCloudDisconnect').onclick=async()=>{
   if(!confirm('Cloud auf diesem Gerät trennen? Es nutzt dann wieder nur den lokalen Speicher (die Daten in der Cloud bleiben erhalten).'))return;
-  localStorage.removeItem('spk_supa'); SUPA=null; speicherModus=lokalerModus();
+  localStorage.removeItem('spk_supa'); localStorage.setItem('spk_local','1'); SUPA=null; speicherModus=lokalerModus();
   toast('Cloud getrennt');
   await ladeStammdaten(); resetFormular(); await aktualisiereBadge(); renderCloudUI();
 };
