@@ -316,7 +316,11 @@
     <div id="listeContainer"></div>
 
     <div class="btn-reihe" style="margin-top:18px">
-      <button class="btn sekundaer" id="btnDruck">🖨 PDF-Protokoll</button>
+      <button class="btn sekundaer" id="btnDruckFoto">🖨 PDF mit Fotos</button>
+      <button class="btn sekundaer" id="btnDruckText">🖨 PDF ohne Fotos</button>
+    </div>
+    <p class="hinweis" style="margin-top:8px">„Mit Fotos" verkleinert die Bilder automatisch, damit die PDF-Datei auch bei vielen Spinden klein bleibt. „Ohne Fotos" erzeugt ein sehr kleines Text-Protokoll.</p>
+    <div class="btn-reihe" style="margin-top:12px">
       <button class="btn geist" id="btnJsonExport">⬇ Backup (JSON)</button>
       <button class="btn geist" id="btnCsv">⬇ CSV</button>
     </div>
@@ -565,15 +569,25 @@ function wechsleView(name){
    ============================================================ */
 async function ladeStammdaten(){
   state.namen=await getSetting('namen',[]);
-  state.pruefer=await getSetting('pruefer',[]);
   state.spindeGesamt=await getSetting('spindeGesamt',150);
+  // Prüfer: beim ersten Start mit Iris Falatik vorbelegen
+  state.pruefer=await getSetting('pruefer',null);
+  if(state.pruefer===null){
+    state.pruefer=['Iris Falatik'];
+    await setSetting('pruefer',state.pruefer);
+  }
   // Zeugen: beim ersten Start mit den drei Namen vorbelegen
   state.zeugen=await getSetting('zeugen',null);
   if(state.zeugen===null){
     state.zeugen=['Chiara Wolf','Tobias Alt','David Hartmann'];
     await setSetting('zeugen',state.zeugen);
   }
-  state.standardPruefer=await getSetting('standardPruefer','');
+  // Standard-Prüfer/in: beim ersten Start Iris Falatik
+  state.standardPruefer=await getSetting('standardPruefer',null);
+  if(state.standardPruefer===null){
+    state.standardPruefer='Iris Falatik';
+    await setSetting('standardPruefer',state.standardPruefer);
+  }
   state.standardZeugen=await getSetting('standardZeugen',[]);
   $('#sNamen').value=state.namen.join('\n');
   $('#sPruefer').value=state.pruefer.join('\n');
@@ -945,18 +959,48 @@ async function aktualisiereBadge(){
 /* ============================================================
    Export: PDF (Druck), JSON, CSV
    ============================================================ */
-async function drucken(){
+/* Foto fürs PDF stark verkleinern (spart bei 150 Spinden enorm Dateigröße) */
+function fotoFuerDruck(dataURL,maxKante=720,qual=0.5){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      let {width:w,height:h}=img;
+      if(Math.max(w,h)>maxKante){const s=maxKante/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s);}
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      res(c.toDataURL('image/jpeg',qual));
+    };
+    img.onerror=()=>res(dataURL);
+    img.src=dataURL;
+  });
+}
+function warteAufBilder(container){
+  const imgs=[...container.querySelectorAll('img')];
+  return Promise.all(imgs.map(im=>im.complete?Promise.resolve():new Promise(r=>{im.onload=im.onerror=r})));
+}
+async function drucken(mitFotos){
   const alle=await getAllInspections();
   if(!alle.length){toast('Keine Kontrollen zum Drucken');return;}
   const geordnet=[...alle].sort((a,b)=>(a.erstellt||0)-(b.erstellt||0));
   const auff=geordnet.filter(e=>e.ergebnis==='auffaellig').length;
   const jetzt=new Date();
   const stand=`${pad(jetzt.getDate())}.${pad(jetzt.getMonth()+1)}.${jetzt.getFullYear()} ${pad(jetzt.getHours())}:${pad(jetzt.getMinutes())}`;
-  const body=geordnet.map((e,i)=>{
+  const hatFotos=geordnet.some(e=>(e.fotos||[]).length);
+  if(mitFotos && hatFotos) toast('Fotos werden fürs PDF komprimiert …');
+  const bloecke=[];
+  for(let i=0;i<geordnet.length;i++){
+    const e=geordnet[i];
     const badge=e.ergebnis==='auffaellig'
       ?'<span class="druck-badge warn">AUFFÄLLIG</span>':'<span class="druck-badge ok">UNAUFFÄLLIG</span>';
-    const fotos=(e.fotos||[]).map(f=>`<img src="${f.dataURL}">`).join('');
-    return `<div class="druck-eintrag">
+    let fotoBlock='';
+    const anzahl=(e.fotos||[]).length;
+    if(mitFotos && anzahl){
+      const komp=await Promise.all(e.fotos.map(f=>fotoFuerDruck(f.dataURL)));
+      fotoBlock=`<div class="druck-fotos">${komp.map(d=>`<img src="${d}">`).join('')}</div>`;
+    }else if(!mitFotos && anzahl){
+      fotoBlock=`<div class="druck-fuss">${anzahl} Foto(s) vorhanden – im Tool einsehbar.</div>`;
+    }
+    bloecke.push(`<div class="druck-eintrag">
       <h4><span>${i+1}. ${escapeHtml(e.name)} — Spind ${escapeHtml(e.spind)}</span>${badge}</h4>
       <table>
         <tr><td class="k">Datum / Uhrzeit</td><td>${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')} Uhr</td></tr>
@@ -964,23 +1008,26 @@ async function drucken(){
         <tr><td class="k">Zeuge(n)</td><td>${escapeHtml(zeugenText(e)||'–')}</td></tr>
         ${e.bemerkung?`<tr><td class="k">Bemerkung</td><td>${escapeHtml(e.bemerkung)}</td></tr>`:''}
       </table>
-      ${fotos?`<div class="druck-fotos">${fotos}</div>`:''}
+      ${fotoBlock}
       <div class="druck-fuss">Unterschrift Prüfer/in: ____________________     Unterschrift Zeuge: ____________________</div>
-    </div>`;
-  }).join('');
-  $('#druck').innerHTML=`
+    </div>`);
+  }
+  const druck=$('#druck');
+  druck.innerHTML=`
     <div class="druck-deckblatt">
       <div class="marke">dreiturm</div>
       <h1>Protokoll der Spindkontrollen</h1>
       <div class="kv">
         Stand: ${stand}<br>
-        Anzahl Kontrollen: ${geordnet.length} &nbsp;·&nbsp; davon auffällig: ${auff}
+        Anzahl Kontrollen: ${geordnet.length} &nbsp;·&nbsp; davon auffällig: ${auff} &nbsp;·&nbsp; ${mitFotos?'mit Fotos (komprimiert)':'ohne Fotos'}
       </div>
     </div>
-    ${body}`;
+    ${bloecke.join('')}`;
+  await warteAufBilder(druck);
   window.print();
 }
-$('#btnDruck').onclick=drucken;
+$('#btnDruckFoto').onclick=()=>drucken(true);
+$('#btnDruckText').onclick=()=>drucken(false);
 
 function downloadDatei(inhalt,dateiname,typ){
   const blob=inhalt instanceof Blob?inhalt:new Blob([inhalt],{type:typ});
