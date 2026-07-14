@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#004B78">
+<title>dreiturm · Spindkontrolle</title>
+<style>
+  :root{
+    --blau:#004B78;        /* Dreiturm Primärfarbe (aus Logo) */
+    --blau-dunkel:#003A5C;
+    --blau-hell:#E6EEF3;
+    --blau-linie:#CBDCE7;
+    --gruen:#2E7D32;
+    --gruen-hell:#E6F2E7;
+    --rot:#C0392B;
+    --rot-hell:#FBEAE8;
+    --grau:#5b6b76;
+    --grau-hell:#f4f6f8;
+    --weiss:#ffffff;
+    --schatten:0 1px 3px rgba(0,40,70,.12),0 1px 2px rgba(0,40,70,.08);
+    --radius:12px;
+    --font: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:var(--font);
+    color:#12232e;
+    background:var(--grau-hell);
+    -webkit-text-size-adjust:100%;
+    line-height:1.45;
+  }
+  /* ---------- Kopf / Branding ---------- */
+  header.app{
+    background:var(--blau);
+    color:#fff;
+    padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 12px;
+    display:flex;align-items:center;gap:12px;
+    position:sticky;top:0;z-index:20;
+    box-shadow:0 2px 6px rgba(0,40,70,.25);
+  }
+  header.app .logo{flex:0 0 auto;color:#fff;display:flex}
+  header.app .titel{display:flex;flex-direction:column;line-height:1.1}
+  header.app .titel .marke{font-weight:800;font-size:20px;letter-spacing:.5px}
+  header.app .titel .sub{font-size:12.5px;opacity:.85;font-weight:500}
+  header.app .badge{margin-left:auto;font-size:12px;background:rgba(255,255,255,.15);
+    padding:5px 10px;border-radius:20px;white-space:nowrap}
+
+  /* ---------- Navigation ---------- */
+  nav.tabs{
+    display:flex;background:var(--weiss);border-bottom:1px solid var(--blau-linie);
+    position:sticky;top:0;z-index:10;
+  }
+  nav.tabs button{
+    flex:1;border:0;background:none;padding:12px 6px;font-size:13.5px;font-weight:600;
+    color:var(--grau);cursor:pointer;border-bottom:3px solid transparent;font-family:inherit;
+  }
+  nav.tabs button.aktiv{color:var(--blau);border-bottom-color:var(--blau)}
+
+  main{max-width:820px;margin:0 auto;padding:16px 16px 96px}
+  .view{display:none}
+  .view.aktiv{display:block}
+
+  h2.abschnitt{font-size:16px;margin:4px 0 14px;color:var(--blau-dunkel);
+    display:flex;align-items:center;gap:8px}
+
+  /* ---------- Karten / Formular ---------- */
+  .karte{background:#fff;border:1px solid var(--blau-linie);border-radius:var(--radius);
+    box-shadow:var(--schatten);padding:16px;margin-bottom:16px}
+  label.feld{display:block;margin-bottom:14px}
+  label.feld > span{display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:5px}
+  input[type=text],input[type=date],input[type=time],input[type=number],select,textarea{
+    width:100%;padding:11px 12px;border:1px solid #c3d2dc;border-radius:9px;font-size:16px;
+    font-family:inherit;background:#fff;color:inherit;
+  }
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blau);
+    box-shadow:0 0 0 3px rgba(0,75,120,.15)}
+  textarea{resize:vertical;min-height:64px}
+  .zwei{display:flex;gap:12px}
+  .zwei > *{flex:1;min-width:0}
+
+  /* ---------- Buttons ---------- */
+  button.btn{font-family:inherit;font-size:15px;font-weight:700;border-radius:10px;
+    padding:12px 16px;border:1px solid transparent;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center;gap:8px}
+  .btn.primaer{background:var(--blau);color:#fff}
+  .btn.primaer:active{background:var(--blau-dunkel)}
+  .btn.sekundaer{background:#fff;color:var(--blau);border-color:var(--blau)}
+  .btn.geist{background:#fff;color:var(--grau);border-color:#c3d2dc}
+  .btn.gefahr{background:#fff;color:var(--rot);border-color:var(--rot)}
+  .btn.voll{width:100%}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn-reihe{display:flex;gap:10px;flex-wrap:wrap}
+
+  /* ---------- Ergebnis-Umschalter ---------- */
+  .segment{display:flex;border:1px solid #c3d2dc;border-radius:10px;overflow:hidden}
+  .segment button{flex:1;border:0;background:#fff;padding:12px;font-size:14.5px;font-weight:700;
+    cursor:pointer;font-family:inherit;color:var(--grau);display:flex;gap:7px;align-items:center;justify-content:center}
+  .segment button.wahl-ok{background:var(--gruen);color:#fff}
+  .segment button.wahl-warn{background:var(--rot);color:#fff}
+  .segment button + button{border-left:1px solid #c3d2dc}
+
+  /* ---------- Fotos ---------- */
+  .foto-hinzu{display:flex;gap:10px;flex-wrap:wrap}
+  .foto-btn{position:relative;overflow:hidden}
+  .foto-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
+  .foto-galerie{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-top:12px}
+  .foto-galerie:empty{display:none}
+  .foto-kachel{position:relative;aspect-ratio:1;border-radius:9px;overflow:hidden;border:1px solid var(--blau-linie);background:#eef2f5}
+  .foto-kachel img{width:100%;height:100%;object-fit:cover;display:block}
+  .foto-kachel .x{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;
+    border:0;background:rgba(0,0,0,.6);color:#fff;font-size:15px;line-height:24px;cursor:pointer;padding:0}
+
+  /* ---------- Fortschritt ---------- */
+  .fortschritt{background:#fff;border:1px solid var(--blau-linie);border-radius:var(--radius);
+    padding:14px 16px;box-shadow:var(--schatten);margin-bottom:16px}
+  .fortschritt .zahl{font-size:26px;font-weight:800;color:var(--blau)}
+  .fortschritt .balken{height:9px;background:var(--blau-hell);border-radius:6px;overflow:hidden;margin-top:8px}
+  .fortschritt .balken > i{display:block;height:100%;background:var(--blau);width:0;transition:width .3s}
+
+  /* ---------- Liste ---------- */
+  .filterzeile{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .filterzeile > *{flex:1;min-width:130px}
+  .eintrag{background:#fff;border:1px solid var(--blau-linie);border-radius:var(--radius);
+    box-shadow:var(--schatten);padding:13px 14px;margin-bottom:11px;display:flex;gap:12px;align-items:center;cursor:pointer}
+  .eintrag .thumb{width:52px;height:52px;flex:0 0 auto;border-radius:8px;object-fit:cover;background:var(--blau-hell);
+    display:flex;align-items:center;justify-content:center;color:var(--blau);font-weight:800;font-size:18px;overflow:hidden}
+  .eintrag .thumb img{width:100%;height:100%;object-fit:cover}
+  .eintrag .info{flex:1;min-width:0}
+  .eintrag .info .name{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .eintrag .info .meta{font-size:12.5px;color:var(--grau)}
+  .pille{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;white-space:nowrap}
+  .pille.ok{background:var(--gruen-hell);color:var(--gruen)}
+  .pille.warn{background:var(--rot-hell);color:var(--rot)}
+
+  .leer{text-align:center;color:var(--grau);padding:40px 16px}
+  .leer svg{opacity:.4;margin-bottom:8px}
+
+  .hinweis{font-size:12.5px;color:var(--grau);margin-top:6px}
+  .info-box{background:var(--blau-hell);border:1px solid var(--blau-linie);border-radius:10px;
+    padding:12px 14px;font-size:13px;color:var(--blau-dunkel);margin-bottom:16px}
+
+  /* ---------- Modal / Detail ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(6,28,42,.55);z-index:50;display:none;
+    align-items:flex-end;justify-content:center}
+  .overlay.auf{display:flex}
+  .modal{background:#fff;width:100%;max-width:820px;max-height:92vh;overflow:auto;
+    border-radius:16px 16px 0 0;padding:18px 18px calc(env(safe-area-inset-bottom,0px) + 22px)}
+  @media(min-width:560px){.overlay{align-items:center}.modal{border-radius:16px}}
+  .modal .kopf{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .modal .kopf h3{margin:0;font-size:18px;color:var(--blau-dunkel)}
+  .modal .schliessen{border:0;background:none;font-size:26px;line-height:1;cursor:pointer;color:var(--grau)}
+  .detail-zeile{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--grau-hell);font-size:14.5px}
+  .detail-zeile b{color:#33474f;font-weight:600}
+  .detail-fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin:14px 0}
+  .detail-fotos img{width:100%;border-radius:9px;border:1px solid var(--blau-linie);cursor:pointer}
+
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(60px);
+    background:var(--blau-dunkel);color:#fff;padding:12px 20px;border-radius:24px;font-size:14px;font-weight:600;
+    box-shadow:0 6px 20px rgba(0,40,70,.35);opacity:0;transition:.28s;z-index:100;pointer-events:none;max-width:90vw;text-align:center}
+  .toast.zeig{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ---------- Druck / PDF-Protokoll ---------- */
+  #druck{display:none}
+  @media print{
+    body{background:#fff}
+    header.app,nav.tabs,main,.overlay,.toast{display:none !important}
+    #druck{display:block;padding:0;color:#000;font-size:12px}
+    .druck-deckblatt{text-align:center;padding:40px 0 30px;border-bottom:3px solid #004B78;margin-bottom:24px}
+    .druck-deckblatt .marke{font-size:30px;font-weight:800;color:#004B78;letter-spacing:1px}
+    .druck-deckblatt h1{font-size:20px;margin:6px 0 4px;color:#003A5C}
+    .druck-deckblatt .kv{font-size:12px;color:#333;margin-top:10px;line-height:1.6}
+    .druck-eintrag{border:1px solid #cbdce7;border-radius:8px;padding:12px 14px;margin-bottom:14px;page-break-inside:avoid}
+    .druck-eintrag h4{margin:0 0 8px;font-size:14px;color:#003A5C;display:flex;justify-content:space-between}
+    .druck-eintrag table{width:100%;border-collapse:collapse;font-size:11.5px}
+    .druck-eintrag td{padding:3px 6px;vertical-align:top;border-bottom:1px solid #eef2f5}
+    .druck-eintrag td.k{width:130px;color:#555;font-weight:600}
+    .druck-fotos{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .druck-fotos img{width:150px;height:150px;object-fit:cover;border:1px solid #ccc;border-radius:4px}
+    .druck-badge{font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px}
+    .druck-badge.ok{background:#E6F2E7;color:#2E7D32}
+    .druck-badge.warn{background:#FBEAE8;color:#C0392B}
+    .druck-fuss{margin-top:8px;font-size:10px;color:#666}
+  }
+</style>
+</head>
+<body>
+
+<header class="app">
+  <span class="logo" id="logoSlot"></span>
+  <span class="titel"><span class="marke">dreiturm</span><span class="sub">Spindkontrolle · Protokoll</span></span>
+  <span class="badge" id="kopfBadge">0 Kontrollen</span>
+</header>
+
+<nav class="tabs">
+  <button data-view="erfassen" class="aktiv">＋ Erfassen</button>
+  <button data-view="uebersicht">☰ Übersicht</button>
+  <button data-view="stammdaten">⚙ Stammdaten</button>
+</nav>
+
+<div id="speicherWarnung" style="display:none;background:#FBEAE8;color:#7a241b;border-bottom:1px solid #e6b7b0;padding:10px 16px;font-size:13px;text-align:center">
+  ⚠ <b>Kein dauerhafter Speicher verfügbar.</b> Die App funktioniert, aber Daten gehen beim Schließen verloren.
+  Bitte die Datei <b>im Browser</b> (Safari/Chrome) öffnen – nicht in einer Vorschau.
+</div>
+
+<main>
+  <!-- ============ ERFASSEN ============ -->
+  <section id="view-erfassen" class="view aktiv">
+    <h2 class="abschnitt">Neue Spindkontrolle</h2>
+    <div id="keinSetupHinweis" class="info-box" style="display:none">
+      Noch keine Mitarbeiter hinterlegt. Bitte zuerst unter <b>Stammdaten</b> die Namensliste einfügen.
+    </div>
+    <form id="formErfassen" class="karte" autocomplete="off">
+      <label class="feld">
+        <span>Mitarbeiter/in *</span>
+        <input list="namensliste" id="fName" type="text" placeholder="Name eingeben oder auswählen" required>
+        <datalist id="namensliste"></datalist>
+      </label>
+
+      <div class="zwei">
+        <label class="feld">
+          <span>Spindnummer *</span>
+          <input id="fSpind" type="text" inputmode="numeric" placeholder="z. B. 042" required>
+        </label>
+        <label class="feld">
+          <span>Prüfer/in *</span>
+          <input list="prueferliste" id="fPruefer" type="text" placeholder="Kontrolleur/in" required>
+          <datalist id="prueferliste"></datalist>
+        </label>
+      </div>
+
+      <div class="zwei">
+        <label class="feld">
+          <span>Datum *</span>
+          <input id="fDatum" type="date" required>
+        </label>
+        <label class="feld">
+          <span>Uhrzeit *</span>
+          <input id="fZeit" type="time" required>
+        </label>
+      </div>
+
+      <label class="feld">
+        <span>Zeuge / anwesende Zweitperson</span>
+        <input id="fZeuge" type="text" placeholder="Name der anwesenden Person">
+      </label>
+
+      <label class="feld" style="margin-bottom:8px">
+        <span>Ergebnis der Kontrolle *</span>
+      </label>
+      <div class="segment" id="segErgebnis" style="margin-bottom:14px">
+        <button type="button" data-wert="unauffaellig">✓ Unauffällig</button>
+        <button type="button" data-wert="auffaellig">⚠ Auffällig</button>
+      </div>
+
+      <label class="feld">
+        <span>Bemerkung</span>
+        <textarea id="fBemerkung" placeholder="z. B. gefundene Produkte, Auffälligkeiten, Anzahl …"></textarea>
+      </label>
+
+      <label class="feld" style="margin-bottom:8px"><span>Fotos vom Inhalt</span></label>
+      <div class="foto-hinzu">
+        <button type="button" class="btn sekundaer foto-btn">📷 Foto aufnehmen
+          <input type="file" accept="image/*" capture="environment" id="fKamera">
+        </button>
+        <button type="button" class="btn geist foto-btn">🖼 Aus Galerie
+          <input type="file" accept="image/*" multiple id="fGalerie">
+        </button>
+      </div>
+      <div class="foto-galerie" id="fotoVorschau"></div>
+
+      <div class="btn-reihe" style="margin-top:18px">
+        <button type="submit" class="btn primaer voll">Kontrolle speichern</button>
+      </div>
+      <p class="hinweis">Datum und Uhrzeit werden automatisch gesetzt und können angepasst werden. * Pflichtfeld.</p>
+    </form>
+  </section>
+
+  <!-- ============ ÜBERSICHT ============ -->
+  <section id="view-uebersicht" class="view">
+    <h2 class="abschnitt">Protokoll-Übersicht</h2>
+    <div class="fortschritt">
+      <div><span class="zahl" id="fortZahl">0</span> <span style="color:var(--grau)" id="fortText">Spinde kontrolliert</span></div>
+      <div class="balken"><i id="fortBalken"></i></div>
+      <div class="hinweis" id="fortDetail"></div>
+    </div>
+
+    <div class="filterzeile">
+      <input type="text" id="filterSuche" placeholder="🔍 Name / Spind suchen">
+      <select id="filterErgebnis">
+        <option value="">Alle Ergebnisse</option>
+        <option value="unauffaellig">Nur unauffällig</option>
+        <option value="auffaellig">Nur auffällig</option>
+      </select>
+    </div>
+
+    <div id="listeContainer"></div>
+
+    <div class="btn-reihe" style="margin-top:18px">
+      <button class="btn sekundaer" id="btnDruck">🖨 PDF-Protokoll</button>
+      <button class="btn geist" id="btnJsonExport">⬇ Backup (JSON)</button>
+      <button class="btn geist" id="btnCsv">⬇ CSV</button>
+    </div>
+  </section>
+
+  <!-- ============ STAMMDATEN ============ -->
+  <section id="view-stammdaten" class="view">
+    <h2 class="abschnitt">Stammdaten</h2>
+
+    <div class="karte">
+      <div class="feld">
+        <span style="display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:5px">Mitarbeiter-Namensliste</span>
+        <div class="btn-reihe" style="margin-bottom:10px">
+          <button type="button" class="btn sekundaer foto-btn">⬆ Liste hochladen (Excel / CSV / TXT)
+            <input type="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain" id="namenUpload">
+          </button>
+        </div>
+        <textarea id="sNamen" rows="8" placeholder="Max Mustermann&#10;Erika Musterfrau&#10;…"></textarea>
+        <p class="hinweis">Excel/CSV/TXT hochladen (Namen aus der <b>ersten Spalte</b>) – oder Namen direkt einfügen, <b>ein Name pro Zeile</b>.</p>
+      </div>
+      <div class="zwei">
+        <label class="feld">
+          <span>Anzahl Spinde gesamt (für Fortschritt)</span>
+          <input id="sSpindeGesamt" type="number" min="1" placeholder="150">
+        </label>
+        <div style="flex:1"></div>
+      </div>
+      <div class="btn-reihe">
+        <button class="btn primaer" id="btnNamenSpeichern">Speichern</button>
+        <span class="hinweis" id="namenStatus" style="align-self:center"></span>
+      </div>
+    </div>
+
+    <div class="karte">
+      <label class="feld" style="margin-bottom:8px">
+        <span>Prüfer / Kontrolleure (ein Name pro Zeile)</span>
+        <textarea id="sPruefer" rows="3" placeholder="Wird beim Erfassen zur Auswahl angeboten"></textarea>
+      </label>
+      <button class="btn sekundaer" id="btnPrueferSpeichern">Prüfer speichern</button>
+    </div>
+
+    <div class="karte">
+      <h2 class="abschnitt" style="margin-top:0">Daten &amp; Backup</h2>
+      <p class="hinweis" style="margin-top:0">Alle Daten liegen ausschließlich lokal in diesem Browser/Gerät. Zur Sicherung regelmäßig ein JSON-Backup exportieren.</p>
+      <div class="btn-reihe">
+        <button class="btn sekundaer" id="btnJsonExport2">⬇ Backup exportieren</button>
+        <button class="btn geist foto-btn">⬆ Backup importieren
+          <input type="file" accept="application/json,.json" id="jsonImport" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+        </button>
+      </div>
+      <div class="btn-reihe" style="margin-top:10px">
+        <button class="btn gefahr" id="btnAllesLoeschen">🗑 Alle Kontrollen löschen</button>
+      </div>
+    </div>
+
+    <div class="info-box" style="margin-top:4px">
+      <b>Rechtlicher Hinweis:</b> Spindkontrollen sind i. d. R. mitbestimmungspflichtig
+      (Betriebsrat, § 87 BetrVG) und datenschutzrelevant (DSGVO). Kontrollen nur auf
+      Grundlage einer Betriebsvereinbarung/Einwilligung, möglichst im Beisein eines Zeugen
+      durchführen. Fotos zweckgebunden verwenden und nach Abschluss löschen.
+    </div>
+  </section>
+</main>
+
+<!-- Detail-Modal -->
+<div class="overlay" id="detailOverlay">
+  <div class="modal" id="detailModal"></div>
+</div>
+
+<!-- Druckbereich -->
+<div id="druck"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   Dreiturm Spindkontrolle – self-contained, offline, IndexedDB
+   ============================================================ */
+
+/* ---- Dreiturm Logo als Inline-SVG (drei Türme) ---- */
+const LOGO_SVG = `
+<svg width="34" height="34" viewBox="0 0 100 100" role="img" aria-label="dreiturm Logo" fill="currentColor">
+  <!-- Zinnen der beiden hohen Türme + niedriger Mittelturm -->
+  <path d="M10 30 h6 v-8 h6 v8 h6 v14 h-18 z"/>
+  <path d="M66 30 h6 v-8 h6 v8 h6 v14 h-18 z"/>
+  <path d="M40 40 h5 v-6 h5 v6 h5 v10 h-15 z"/>
+  <!-- Türme (Körper) -->
+  <rect x="10" y="40" width="18" height="34"/>
+  <rect x="66" y="40" width="18" height="34"/>
+  <rect x="40" y="50" width="15" height="24"/>
+  <!-- Fenster (ausgespart über evenodd nicht nötig, kleine Rechtecke in Hintergrundfarbe) -->
+  <!-- Basis-Bogen -->
+  <path d="M6 74 Q50 92 88 74 L88 82 Q50 98 6 82 Z"/>
+</svg>`;
+document.getElementById('logoSlot').innerHTML = LOGO_SVG;
+
+/* ---- kleine Helfer ---- */
+const $ = (s,el=document)=>el.querySelector(s);
+const $$ = (s,el=document)=>[...el.querySelectorAll(s)];
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('zeig');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('zeig'),2600);}
+function pad(n){return String(n).padStart(2,'0');}
+function heuteISO(){const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;}
+function jetztHM(){const d=new Date();return `${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+function fmtDatum(iso){if(!iso)return'';const[y,m,d]=iso.split('-');return `${d}.${m}.${y}`;}
+function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ============================================================
+   IndexedDB
+   ============================================================ */
+const DB_NAME='dreiturm_spindkontrolle', DB_VER=1;
+let db=null;
+function openDB(){
+  return new Promise((res,rej)=>{
+    const rq=indexedDB.open(DB_NAME,DB_VER);
+    rq.onupgradeneeded=e=>{
+      const d=e.target.result;
+      if(!d.objectStoreNames.contains('inspections'))
+        d.createObjectStore('inspections',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('settings'))
+        d.createObjectStore('settings',{keyPath:'key'});
+    };
+    rq.onsuccess=e=>{db=e.target.result;res(db);};
+    rq.onerror=e=>rej(e.target.error);
+  });
+}
+function tx(store,mode='readonly'){return db.transaction(store,mode).objectStore(store);}
+function reqP(r){return new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+
+/* Notfall-Speicher (falls IndexedDB nicht verfügbar ist, z.B. privater Modus
+   oder eine Vorschau-Umgebung): App bleibt bedienbar, warnt aber. */
+let speicherModus='indexeddb'; // 'indexeddb' | 'speicher'
+const mem={settings:new Map(),inspections:new Map()};
+
+async function setSetting(key,value){
+  if(speicherModus!=='indexeddb'){mem.settings.set(key,value);return;}
+  await reqP(tx('settings','readwrite').put({key,value}));
+}
+async function getSetting(key,def=null){
+  if(speicherModus!=='indexeddb'){return mem.settings.has(key)?mem.settings.get(key):def;}
+  const r=await reqP(tx('settings').get(key));return r?r.value:def;
+}
+async function addInspection(obj){
+  if(speicherModus!=='indexeddb'){mem.inspections.set(obj.id,obj);return;}
+  await reqP(tx('inspections','readwrite').put(obj));
+}
+async function getAllInspections(){
+  const list = speicherModus!=='indexeddb'
+    ? [...mem.inspections.values()]
+    : (await reqP(tx('inspections').getAll()))||[];
+  return list.sort((a,b)=>(b.erstellt||0)-(a.erstellt||0));
+}
+async function getInspection(id){
+  if(speicherModus!=='indexeddb'){return mem.inspections.get(id);}
+  return await reqP(tx('inspections').get(id));
+}
+async function deleteInspection(id){
+  if(speicherModus!=='indexeddb'){mem.inspections.delete(id);return;}
+  await reqP(tx('inspections','readwrite').delete(id));
+}
+async function clearInspections(){
+  if(speicherModus!=='indexeddb'){mem.inspections.clear();return;}
+  await reqP(tx('inspections','readwrite').clear());
+}
+
+/* ============================================================
+   Bilder: verkleinern -> JPEG Blob
+   ============================================================ */
+function bildVerkleinern(file,maxKante=1600,qual=0.82){
+  return new Promise((res,rej)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{
+      let {width:w,height:h}=img;
+      if(Math.max(w,h)>maxKante){const s=maxKante/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s);}
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      c.toBlob(b=>b?res(b):rej(new Error('toBlob fehlgeschlagen')),'image/jpeg',qual);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('Bild konnte nicht geladen werden'));};
+    img.src=url;
+  });
+}
+function blobURL(blob){return URL.createObjectURL(blob);}
+function blobToDataURL(blob){return new Promise((res,rej)=>{const r=new FileReader();
+  r.onload=()=>res(r.result);r.onerror=()=>rej(r.error);r.readAsDataURL(blob);});}
+function dataURLtoBlob(dataURL){
+  const [head,b64]=dataURL.split(',');const mime=(head.match(/:(.*?);/)||[])[1]||'image/jpeg';
+  const bin=atob(b64);const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
+}
+
+/* ============================================================
+   State
+   ============================================================ */
+let state={
+  namen:[], pruefer:[], spindeGesamt:150,
+  ergebnis:'unauffaellig',
+  fotos:[]  // {blob, url}
+};
+
+/* ============================================================
+   Navigation
+   ============================================================ */
+$$('nav.tabs button').forEach(b=>b.onclick=()=>wechsleView(b.dataset.view));
+function wechsleView(name){
+  $$('nav.tabs button').forEach(b=>b.classList.toggle('aktiv',b.dataset.view===name));
+  $$('.view').forEach(v=>v.classList.remove('aktiv'));
+  $('#view-'+name).classList.add('aktiv');
+  if(name==='uebersicht')renderListe();
+  window.scrollTo(0,0);
+}
+
+/* ============================================================
+   Stammdaten
+   ============================================================ */
+async function ladeStammdaten(){
+  state.namen=await getSetting('namen',[]);
+  state.pruefer=await getSetting('pruefer',[]);
+  state.spindeGesamt=await getSetting('spindeGesamt',150);
+  $('#sNamen').value=state.namen.join('\n');
+  $('#sPruefer').value=state.pruefer.join('\n');
+  $('#sSpindeGesamt').value=state.spindeGesamt;
+  fuelleDatalists();
+  $('#keinSetupHinweis').style.display=state.namen.length?'none':'block';
+}
+function parseZeilen(text){return text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean)
+  .filter((v,i,a)=>a.indexOf(v)===i);}
+function fuelleDatalists(){
+  $('#namensliste').innerHTML=state.namen.map(n=>`<option value="${escapeHtml(n)}">`).join('');
+  $('#prueferliste').innerHTML=state.pruefer.map(n=>`<option value="${escapeHtml(n)}">`).join('');
+}
+$('#btnNamenSpeichern').onclick=async()=>{
+  state.namen=parseZeilen($('#sNamen').value);
+  state.spindeGesamt=parseInt($('#sSpindeGesamt').value,10)||state.namen.length||150;
+  await setSetting('namen',state.namen);
+  await setSetting('spindeGesamt',state.spindeGesamt);
+  fuelleDatalists();
+  $('#keinSetupHinweis').style.display=state.namen.length?'none':'block';
+  $('#namenStatus').textContent=`${state.namen.length} Namen gespeichert`;
+  toast(`${state.namen.length} Mitarbeiter gespeichert`);
+};
+/* ---- Namensliste-Upload: Excel (.xlsx) + CSV/TXT ---- */
+function decodeXml(s){
+  return String(s)
+    .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'")
+    .replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(+n))
+    .replace(/&#x([0-9a-fA-F]+);/g,(_,n)=>String.fromCharCode(parseInt(n,16)))
+    .replace(/&amp;/g,'&');
+}
+function parseCSVText(text){
+  return text.split(/\r?\n/).map(line=>{
+    line=line.trim(); if(!line) return '';
+    // erste Spalte, Trenner ; , oder Tab, umschließende Anführungszeichen entfernen
+    return line.split(/[;,\t]/)[0].trim().replace(/^"(.*)"$/,'$1').trim();
+  }).filter(Boolean);
+}
+async function inflateRaw(bytes){
+  if(typeof DecompressionStream==='undefined')
+    throw new Error('Dieser Browser kann Excel-Dateien nicht lesen. Bitte als CSV speichern.');
+  const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function readXlsxNames(file){
+  const ab=await file.arrayBuffer();
+  const dv=new DataView(ab), u8=new Uint8Array(ab), td=new TextDecoder();
+  // End-of-Central-Directory suchen
+  let eocd=-1;
+  for(let i=u8.length-22;i>=0;i--){ if(dv.getUint32(i,true)===0x06054b50){eocd=i;break;} }
+  if(eocd<0) throw new Error('Keine gültige Excel-Datei (.xlsx).');
+  const count=dv.getUint16(eocd+10,true), cdOff=dv.getUint32(eocd+16,true);
+  const entries={}; let p=cdOff;
+  for(let n=0;n<count;n++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const method=dv.getUint16(p+10,true);
+    const compSize=dv.getUint32(p+20,true);
+    const nameLen=dv.getUint16(p+28,true);
+    const extraLen=dv.getUint16(p+30,true);
+    const commentLen=dv.getUint16(p+32,true);
+    const localOff=dv.getUint32(p+42,true);
+    const name=td.decode(u8.subarray(p+46,p+46+nameLen));
+    entries[name]={method,compSize,localOff};
+    p+=46+nameLen+extraLen+commentLen;
+  }
+  async function extract(name){
+    const e=entries[name]; if(!e) return null;
+    if(dv.getUint32(e.localOff,true)!==0x04034b50) return null;
+    const nLen=dv.getUint16(e.localOff+26,true), xLen=dv.getUint16(e.localOff+28,true);
+    const start=e.localOff+30+nLen+xLen;
+    const data=u8.subarray(start,start+e.compSize);
+    const out=e.method===0?data:await inflateRaw(data);
+    return td.decode(out);
+  }
+  // Shared Strings (Texttabelle)
+  const shared=[];
+  const ssXml=await extract('xl/sharedStrings.xml');
+  if(ssXml){
+    let m; const si=/<si\b[^>]*>([\s\S]*?)<\/si>/g;
+    while((m=si.exec(ssXml))){
+      const t=[...m[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(x=>x[1]).join('');
+      shared.push(decodeXml(t));
+    }
+  }
+  // erstes Arbeitsblatt
+  const sheetKey=Object.keys(entries).find(k=>/^xl\/worksheets\/sheet1\.xml$/.test(k))
+             || Object.keys(entries).find(k=>/^xl\/worksheets\/.*\.xml$/.test(k));
+  const sheetXml=sheetKey?await extract(sheetKey):null;
+  const namen=[];
+  if(sheetXml){
+    let m; const cell=/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+    while((m=cell.exec(sheetXml))){
+      const attrs=m[1]||'', inner=m[2]||'';
+      const r=attrs.match(/r="([A-Z]+)\d+"/);
+      if(!r || r[1]!=='A') continue;          // nur erste Spalte (A)
+      const t=(attrs.match(/t="([^"]+)"/)||[])[1]||'';
+      let val='';
+      if(t==='s'){ const v=inner.match(/<v>([\s\S]*?)<\/v>/); if(v) val=shared[+v[1]]||''; }
+      else if(t==='inlineStr'){ val=decodeXml([...inner.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(x=>x[1]).join('')); }
+      else { const v=inner.match(/<v>([\s\S]*?)<\/v>/); if(v) val=decodeXml(v[1]); }
+      val=val.trim(); if(val) namen.push(val);
+    }
+  }
+  return namen;
+}
+$('#namenUpload').onchange=async(e)=>{
+  const file=e.target.files[0]; e.target.value=''; if(!file) return;
+  try{
+    let namen = file.name.toLowerCase().endsWith('.xlsx')
+      ? await readXlsxNames(file)
+      : parseCSVText(await file.text());
+    // Kopfzeile & Duplikate entfernen
+    namen=namen.map(s=>s.trim())
+      .filter(n=>n && !/^(name|namen|mitarbeiter(in)?|nachname|vorname)$/i.test(n))
+      .filter((v,i,a)=>a.indexOf(v)===i);
+    if(!namen.length){ toast('Keine Namen in der Datei gefunden'); return; }
+    $('#sNamen').value=namen.join('\n');
+    state.namen=namen;
+    if(!$('#sSpindeGesamt').value) $('#sSpindeGesamt').value=Math.max(namen.length,150);
+    state.spindeGesamt=parseInt($('#sSpindeGesamt').value,10)||namen.length;
+    await setSetting('namen',state.namen);
+    await setSetting('spindeGesamt',state.spindeGesamt);
+    fuelleDatalists();
+    $('#keinSetupHinweis').style.display='none';
+    $('#namenStatus').textContent=`${namen.length} Namen importiert`;
+    toast(`${namen.length} Namen aus „${file.name}" importiert ✓`);
+  }catch(err){ console.error(err); alert('Import fehlgeschlagen: '+err.message); }
+};
+
+$('#btnPrueferSpeichern').onclick=async()=>{
+  state.pruefer=parseZeilen($('#sPruefer').value);
+  await setSetting('pruefer',state.pruefer);
+  fuelleDatalists();
+  toast('Prüfer gespeichert');
+};
+
+/* ============================================================
+   Erfassen – Formular
+   ============================================================ */
+function resetFormular(){
+  $('#formErfassen').reset();
+  $('#fDatum').value=heuteISO();
+  $('#fZeit').value=jetztHM();
+  state.ergebnis='unauffaellig';
+  setzeErgebnisUI();
+  state.fotos.forEach(f=>URL.revokeObjectURL(f.url));
+  state.fotos=[];
+  renderFotoVorschau();
+}
+function setzeErgebnisUI(){
+  $$('#segErgebnis button').forEach(b=>{
+    const aktiv=b.dataset.wert===state.ergebnis;
+    b.classList.toggle('wahl-ok',aktiv&&state.ergebnis==='unauffaellig');
+    b.classList.toggle('wahl-warn',aktiv&&state.ergebnis==='auffaellig');
+  });
+}
+$$('#segErgebnis button').forEach(b=>b.onclick=()=>{state.ergebnis=b.dataset.wert;setzeErgebnisUI();});
+
+async function fotosHinzu(fileList){
+  const files=[...fileList].filter(f=>f.type.startsWith('image/'));
+  for(const f of files){
+    try{const blob=await bildVerkleinern(f);state.fotos.push({blob,url:blobURL(blob)});}
+    catch(err){console.error(err);toast('Ein Bild konnte nicht verarbeitet werden');}
+  }
+  renderFotoVorschau();
+}
+$('#fKamera').onchange=e=>{fotosHinzu(e.target.files);e.target.value='';};
+$('#fGalerie').onchange=e=>{fotosHinzu(e.target.files);e.target.value='';};
+function renderFotoVorschau(){
+  const g=$('#fotoVorschau');
+  g.innerHTML=state.fotos.map((f,i)=>
+    `<div class="foto-kachel"><img src="${f.url}" alt="Foto ${i+1}"><button type="button" class="x" data-i="${i}">×</button></div>`
+  ).join('');
+  $$('.foto-kachel .x',g).forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.i;URL.revokeObjectURL(state.fotos[i].url);
+    state.fotos.splice(i,1);renderFotoVorschau();
+  });
+}
+
+$('#formErfassen').onsubmit=async(e)=>{
+  e.preventDefault();
+  const name=$('#fName').value.trim();
+  const spind=$('#fSpind').value.trim();
+  const pruefer=$('#fPruefer').value.trim();
+  if(!name||!spind||!pruefer){toast('Bitte Pflichtfelder ausfüllen');return;}
+
+  // Prüfer ggf. zur Liste lernen
+  if(pruefer && !state.pruefer.includes(pruefer)){
+    state.pruefer.push(pruefer);await setSetting('pruefer',state.pruefer);fuelleDatalists();
+  }
+
+  const fotos=[];
+  for(const f of state.fotos){fotos.push({dataURL:await blobToDataURL(f.blob)});}
+
+  const eintrag={
+    id:(crypto.randomUUID?crypto.randomUUID():'id-'+Date.now()+'-'+Math.round(performance.now())),
+    name, spind, pruefer,
+    zeuge:$('#fZeuge').value.trim(),
+    datum:$('#fDatum').value, zeit:$('#fZeit').value,
+    ergebnis:state.ergebnis,
+    bemerkung:$('#fBemerkung').value.trim(),
+    fotos,
+    erstellt:Date.now()
+  };
+  await addInspection(eintrag);
+  toast('Kontrolle gespeichert ✓');
+  resetFormular();
+  await aktualisiereBadge();
+  wechsleView('uebersicht');
+};
+
+/* ============================================================
+   Übersicht / Liste
+   ============================================================ */
+let cacheEintraege=[];
+async function renderListe(){
+  cacheEintraege=await getAllInspections();
+  await aktualisiereFortschritt();
+  const such=$('#filterSuche').value.trim().toLowerCase();
+  const erg=$('#filterErgebnis').value;
+  const liste=cacheEintraege.filter(e=>{
+    if(erg&&e.ergebnis!==erg)return false;
+    if(such&&!((e.name||'').toLowerCase().includes(such)||(e.spind||'').toLowerCase().includes(such)))return false;
+    return true;
+  });
+  const c=$('#listeContainer');
+  if(!liste.length){
+    c.innerHTML=`<div class="leer">
+      <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+      <div>${cacheEintraege.length?'Keine Treffer für den Filter.':'Noch keine Kontrollen erfasst.'}</div></div>`;
+    return;
+  }
+  c.innerHTML=liste.map(e=>{
+    const foto=e.fotos&&e.fotos[0];
+    const thumb=foto?`<img src="${foto.dataURL}" alt="">`:escapeHtml((e.spind||'?').slice(0,3));
+    const pille=e.ergebnis==='auffaellig'
+      ?'<span class="pille warn">⚠ Auffällig</span>':'<span class="pille ok">✓ Unauffällig</span>';
+    return `<div class="eintrag" data-id="${e.id}">
+      <div class="thumb">${thumb}</div>
+      <div class="info">
+        <div class="name">${escapeHtml(e.name)}</div>
+        <div class="meta">Spind ${escapeHtml(e.spind)} · ${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')}${e.fotos&&e.fotos.length?' · '+e.fotos.length+' 📷':''}</div>
+      </div>
+      ${pille}
+    </div>`;
+  }).join('');
+  $$('.eintrag',c).forEach(el=>el.onclick=()=>zeigeDetail(el.dataset.id));
+}
+$('#filterSuche').oninput=renderListe;
+$('#filterErgebnis').onchange=renderListe;
+
+async function aktualisiereFortschritt(){
+  const alle=cacheEintraege.length?cacheEintraege:await getAllInspections();
+  const kontrolliert=new Set(alle.map(e=>(e.spind||'').trim()).filter(Boolean)).size;
+  const gesamt=state.spindeGesamt||0;
+  $('#fortZahl').textContent=kontrolliert;
+  const auff=alle.filter(e=>e.ergebnis==='auffaellig').length;
+  if(gesamt>0){
+    $('#fortText').textContent=`von ${gesamt} Spinden kontrolliert`;
+    $('#fortBalken').style.width=Math.min(100,Math.round(kontrolliert/gesamt*100))+'%';
+  }else{
+    $('#fortText').textContent='Spinde kontrolliert';
+    $('#fortBalken').style.width='0%';
+  }
+  $('#fortDetail').textContent=`${alle.length} Kontrollen gesamt · ${auff} auffällig`;
+}
+
+/* ============================================================
+   Detailansicht
+   ============================================================ */
+const overlay=$('#detailOverlay');
+overlay.onclick=e=>{if(e.target===overlay)schliesseDetail();};
+function schliesseDetail(){overlay.classList.remove('auf');$('#detailModal').innerHTML='';}
+async function zeigeDetail(id){
+  const e=await getInspection(id);if(!e)return;
+  const pille=e.ergebnis==='auffaellig'
+    ?'<span class="pille warn">⚠ Auffällig</span>':'<span class="pille ok">✓ Unauffällig</span>';
+  const fotos=(e.fotos||[]).map(f=>`<img src="${f.dataURL}" alt="Foto">`).join('');
+  $('#detailModal').innerHTML=`
+    <div class="kopf"><h3>Spind ${escapeHtml(e.spind)} ${pille}</h3>
+      <button class="schliessen" id="mClose">×</button></div>
+    <div class="detail-zeile"><b>Mitarbeiter/in</b><span>${escapeHtml(e.name)}</span></div>
+    <div class="detail-zeile"><b>Datum / Uhrzeit</b><span>${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')}</span></div>
+    <div class="detail-zeile"><b>Prüfer/in</b><span>${escapeHtml(e.pruefer||'–')}</span></div>
+    <div class="detail-zeile"><b>Zeuge</b><span>${escapeHtml(e.zeuge||'–')}</span></div>
+    <div class="detail-zeile"><b>Ergebnis</b><span>${e.ergebnis==='auffaellig'?'Auffällig':'Unauffällig'}</span></div>
+    ${e.bemerkung?`<div class="detail-zeile"><b>Bemerkung</b><span style="text-align:right;max-width:60%">${escapeHtml(e.bemerkung)}</span></div>`:''}
+    ${fotos?`<div class="detail-fotos">${fotos}</div>`:'<p class="hinweis">Keine Fotos.</p>'}
+    <div class="btn-reihe" style="margin-top:14px">
+      <button class="btn gefahr" id="mDelete">🗑 Löschen</button>
+      <button class="btn geist" id="mCloseBtn">Schließen</button>
+    </div>`;
+  overlay.classList.add('auf');
+  $('#mClose').onclick=schliesseDetail;
+  $('#mCloseBtn').onclick=schliesseDetail;
+  $('#mDelete').onclick=async()=>{
+    if(confirm('Diese Kontrolle wirklich löschen?')){
+      await deleteInspection(id);schliesseDetail();toast('Kontrolle gelöscht');
+      await aktualisiereBadge();renderListe();
+    }
+  };
+  $$('#detailModal .detail-fotos img').forEach(img=>img.onclick=()=>window.open(img.src,'_blank'));
+}
+
+/* ============================================================
+   Badge
+   ============================================================ */
+async function aktualisiereBadge(){
+  const n=(await getAllInspections()).length;
+  $('#kopfBadge').textContent=n===1?'1 Kontrolle':`${n} Kontrollen`;
+}
+
+/* ============================================================
+   Export: PDF (Druck), JSON, CSV
+   ============================================================ */
+async function drucken(){
+  const alle=await getAllInspections();
+  if(!alle.length){toast('Keine Kontrollen zum Drucken');return;}
+  const geordnet=[...alle].sort((a,b)=>(a.erstellt||0)-(b.erstellt||0));
+  const auff=geordnet.filter(e=>e.ergebnis==='auffaellig').length;
+  const jetzt=new Date();
+  const stand=`${pad(jetzt.getDate())}.${pad(jetzt.getMonth()+1)}.${jetzt.getFullYear()} ${pad(jetzt.getHours())}:${pad(jetzt.getMinutes())}`;
+  const body=geordnet.map((e,i)=>{
+    const badge=e.ergebnis==='auffaellig'
+      ?'<span class="druck-badge warn">AUFFÄLLIG</span>':'<span class="druck-badge ok">UNAUFFÄLLIG</span>';
+    const fotos=(e.fotos||[]).map(f=>`<img src="${f.dataURL}">`).join('');
+    return `<div class="druck-eintrag">
+      <h4><span>${i+1}. ${escapeHtml(e.name)} — Spind ${escapeHtml(e.spind)}</span>${badge}</h4>
+      <table>
+        <tr><td class="k">Datum / Uhrzeit</td><td>${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')} Uhr</td></tr>
+        <tr><td class="k">Prüfer/in</td><td>${escapeHtml(e.pruefer||'–')}</td></tr>
+        <tr><td class="k">Zeuge</td><td>${escapeHtml(e.zeuge||'–')}</td></tr>
+        ${e.bemerkung?`<tr><td class="k">Bemerkung</td><td>${escapeHtml(e.bemerkung)}</td></tr>`:''}
+      </table>
+      ${fotos?`<div class="druck-fotos">${fotos}</div>`:''}
+      <div class="druck-fuss">Unterschrift Prüfer/in: ____________________     Unterschrift Zeuge: ____________________</div>
+    </div>`;
+  }).join('');
+  $('#druck').innerHTML=`
+    <div class="druck-deckblatt">
+      <div class="marke">dreiturm</div>
+      <h1>Protokoll der Spindkontrollen</h1>
+      <div class="kv">
+        Stand: ${stand}<br>
+        Anzahl Kontrollen: ${geordnet.length} &nbsp;·&nbsp; davon auffällig: ${auff}
+      </div>
+    </div>
+    ${body}`;
+  window.print();
+}
+$('#btnDruck').onclick=drucken;
+
+function downloadDatei(inhalt,dateiname,typ){
+  const blob=inhalt instanceof Blob?inhalt:new Blob([inhalt],{type:typ});
+  const a=document.createElement('a');const url=URL.createObjectURL(blob);
+  a.href=url;a.download=dateiname;document.body.appendChild(a);a.click();
+  a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function jsonExport(){
+  const daten={
+    typ:'dreiturm-spindkontrolle', version:1, exportiert:new Date().toISOString(),
+    settings:{namen:state.namen,pruefer:state.pruefer,spindeGesamt:state.spindeGesamt},
+    inspections:await getAllInspections()
+  };
+  const d=new Date();
+  downloadDatei(JSON.stringify(daten),`spindkontrolle_backup_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.json`,'application/json');
+  toast('Backup exportiert');
+}
+$('#btnJsonExport').onclick=jsonExport;
+$('#btnJsonExport2').onclick=jsonExport;
+
+async function csvExport(){
+  const alle=await getAllInspections();
+  if(!alle.length){toast('Keine Daten für CSV');return;}
+  const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
+  const kopf=['Name','Spindnummer','Datum','Uhrzeit','Pruefer','Zeuge','Ergebnis','Bemerkung','Anzahl Fotos'];
+  const zeilen=alle.map(e=>[e.name,e.spind,fmtDatum(e.datum),e.zeit,e.pruefer,e.zeuge,
+    e.ergebnis==='auffaellig'?'Auffällig':'Unauffällig',e.bemerkung,(e.fotos||[]).length].map(q).join(';'));
+  const csv='﻿'+[kopf.map(q).join(';'),...zeilen].join('\r\n');
+  const d=new Date();
+  downloadDatei(csv,`spindkontrolle_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.csv`,'text/csv;charset=utf-8');
+  toast('CSV exportiert');
+}
+$('#btnCsv').onclick=csvExport;
+
+/* JSON Import */
+$('#jsonImport').onchange=async(e)=>{
+  const file=e.target.files[0];e.target.value='';if(!file)return;
+  try{
+    const daten=JSON.parse(await file.text());
+    if(daten.typ!=='dreiturm-spindkontrolle')throw new Error('Falsches Dateiformat');
+    if(!confirm('Backup importieren? Vorhandene Kontrollen mit gleicher ID werden überschrieben, neue hinzugefügt.'))return;
+    if(daten.settings){
+      state.namen=daten.settings.namen||[];state.pruefer=daten.settings.pruefer||[];
+      state.spindeGesamt=daten.settings.spindeGesamt||150;
+      await setSetting('namen',state.namen);await setSetting('pruefer',state.pruefer);
+      await setSetting('spindeGesamt',state.spindeGesamt);
+    }
+    for(const ins of (daten.inspections||[]))await addInspection(ins);
+    await ladeStammdaten();await aktualisiereBadge();
+    toast(`${(daten.inspections||[]).length} Kontrollen importiert`);
+    wechsleView('uebersicht');
+  }catch(err){console.error(err);alert('Import fehlgeschlagen: '+err.message);}
+};
+
+/* Alles löschen */
+$('#btnAllesLoeschen').onclick=async()=>{
+  if(!confirm('Wirklich ALLE Kontrollen unwiderruflich löschen? (Namensliste bleibt erhalten)'))return;
+  if(!confirm('Sicher? Dies kann nicht rückgängig gemacht werden.'))return;
+  await clearInspections();await aktualisiereBadge();renderListe();toast('Alle Kontrollen gelöscht');
+};
+
+/* ============================================================
+   Init
+   ============================================================ */
+(async function init(){
+  try{ await openDB(); }
+  catch(err){
+    console.warn('IndexedDB nicht verfügbar, Notfallspeicher aktiv:',err);
+    speicherModus='speicher';
+    const w=document.getElementById('speicherWarnung');
+    if(w) w.style.display='block';
+  }
+  try{
+    await ladeStammdaten();
+    resetFormular();
+    await aktualisiereBadge();
+  }catch(err){
+    console.error('Init-Fehler:',err);
+    toast('Hinweis: '+err.message);
+  }
+})();
+</script>
+</body>
+</html>
