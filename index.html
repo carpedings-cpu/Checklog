@@ -331,6 +331,24 @@
     <h2 class="abschnitt">Stammdaten</h2>
 
     <div class="karte">
+      <h2 class="abschnitt" style="margin-top:0">☁ Cloud-Sync (Handy ↔ Rechner)</h2>
+      <p class="hinweis" id="cloudStatus" style="margin-top:0"></p>
+      <div id="cloudAus">
+        <label class="feld"><span>Supabase URL</span><input id="cfgUrl" type="text" inputmode="url" placeholder="https://....supabase.co"></label>
+        <label class="feld"><span>Anon Key</span><input id="cfgKey" type="text" placeholder="eyJ… (langer Schlüssel)"></label>
+        <button class="btn primaer" id="btnCloudConnect">Verbinden</button>
+      </div>
+      <div id="cloudAn" style="display:none">
+        <div class="btn-reihe">
+          <button class="btn sekundaer" id="btnInvite">🔗 Einladungslink fürs andere Gerät</button>
+          <button class="btn geist" id="btnCloudDisconnect">Trennen</button>
+        </div>
+        <p class="hinweis">Link an das andere Gerät schicken → dort einmal öffnen → beide teilen denselben Datenstand.</p>
+        <textarea id="inviteOut" rows="2" readonly style="display:none;margin-top:8px"></textarea>
+      </div>
+    </div>
+
+    <div class="karte">
       <div class="feld">
         <span style="display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:5px">Mitarbeiter-Namensliste</span>
         <div class="btn-reihe" style="margin-bottom:10px">
@@ -473,38 +491,92 @@ function openDB(){
 function tx(store,mode='readonly'){return db.transaction(store,mode).objectStore(store);}
 function reqP(r){return new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
 
-/* Notfall-Speicher (falls IndexedDB nicht verfügbar ist, z.B. privater Modus
-   oder eine Vorschau-Umgebung): App bleibt bedienbar, warnt aber. */
-let speicherModus='indexeddb'; // 'indexeddb' | 'speicher'
+/* Speichermodus: 'supabase' (Cloud, geräteübergreifend) | 'indexeddb' (lokal)
+   | 'speicher' (Notfall, falls IndexedDB nicht verfügbar). */
+let speicherModus='indexeddb';
 const mem={settings:new Map(),inspections:new Map()};
 
+/* ---- Cloud-Sync (Supabase) ---- */
+let SUPA=null; // {url,key}
+function b64urlDecode(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return decodeURIComponent(escape(atob(s)));}
+function b64urlEncode(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function ladeSupaConfig(){
+  try{
+    const m=location.hash.match(/cfg=([^&]+)/);
+    if(m){
+      const cfg=JSON.parse(b64urlDecode(m[1]));
+      if(cfg&&cfg.url&&cfg.key) localStorage.setItem('spk_supa',JSON.stringify({url:cfg.url,key:cfg.key}));
+      history.replaceState(null,'',location.pathname+location.search);
+    }
+  }catch(e){console.warn('Einladungslink ungültig:',e);}
+  try{const s=localStorage.getItem('spk_supa'); if(s) SUPA=JSON.parse(s);}catch(e){}
+}
+function cfgLink(){
+  return location.origin+location.pathname+'#cfg='+b64urlEncode(JSON.stringify({url:SUPA.url,key:SUPA.key}));
+}
+async function supaFetch(path,opts={}){
+  const r=await fetch(SUPA.url+'/rest/v1/'+path,{...opts,headers:{
+    apikey:SUPA.key,Authorization:'Bearer '+SUPA.key,'Content-Type':'application/json',...(opts.headers||{})}});
+  if(!r.ok){const t=await r.text();throw new Error('Cloud '+r.status+': '+t.slice(0,140));}
+  const t=await r.text(); return t?JSON.parse(t):null;
+}
+const enc=encodeURIComponent;
+function fotoAnzahl(e){return (typeof e.foto_anzahl==='number')?e.foto_anzahl:((e.fotos&&e.fotos.length)||0);}
+
 async function setSetting(key,value){
+  if(speicherModus==='supabase'){
+    await supaFetch('spk_settings?on_conflict=key',{method:'POST',
+      headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({key,value})});
+    return;
+  }
   if(speicherModus!=='indexeddb'){mem.settings.set(key,value);return;}
   await reqP(tx('settings','readwrite').put({key,value}));
 }
 async function getSetting(key,def=null){
+  if(speicherModus==='supabase'){
+    const r=await supaFetch('spk_settings?key=eq.'+enc(key)+'&select=value');
+    return (r&&r.length)?r[0].value:def;
+  }
   if(speicherModus!=='indexeddb'){return mem.settings.has(key)?mem.settings.get(key):def;}
   const r=await reqP(tx('settings').get(key));return r?r.value:def;
 }
 async function addInspection(obj){
+  if(speicherModus==='supabase'){
+    const row={id:obj.id,name:obj.name,spind:obj.spind,pruefer:obj.pruefer,
+      zeugen:obj.zeugen||[],datum:obj.datum,zeit:obj.zeit,ergebnis:obj.ergebnis,
+      bemerkung:obj.bemerkung,fotos:obj.fotos||[],foto_anzahl:(obj.fotos||[]).length,erstellt:obj.erstellt};
+    await supaFetch('spk_inspections?on_conflict=id',{method:'POST',
+      headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(row)});
+    return;
+  }
   if(speicherModus!=='indexeddb'){mem.inspections.set(obj.id,obj);return;}
   await reqP(tx('inspections','readwrite').put(obj));
 }
-async function getAllInspections(){
+async function getAllInspections(withFotos=false){
+  if(speicherModus==='supabase'){
+    const cols=withFotos?'*':'id,name,spind,pruefer,zeugen,datum,zeit,ergebnis,bemerkung,foto_anzahl,erstellt';
+    return (await supaFetch('spk_inspections?select='+cols+'&order=erstellt.desc'))||[];
+  }
   const list = speicherModus!=='indexeddb'
     ? [...mem.inspections.values()]
     : (await reqP(tx('inspections').getAll()))||[];
   return list.sort((a,b)=>(b.erstellt||0)-(a.erstellt||0));
 }
 async function getInspection(id){
+  if(speicherModus==='supabase'){
+    const r=await supaFetch('spk_inspections?id=eq.'+enc(id)+'&select=*');
+    return (r&&r.length)?r[0]:undefined;
+  }
   if(speicherModus!=='indexeddb'){return mem.inspections.get(id);}
   return await reqP(tx('inspections').get(id));
 }
 async function deleteInspection(id){
+  if(speicherModus==='supabase'){await supaFetch('spk_inspections?id=eq.'+enc(id),{method:'DELETE',headers:{Prefer:'return=minimal'}});return;}
   if(speicherModus!=='indexeddb'){mem.inspections.delete(id);return;}
   await reqP(tx('inspections','readwrite').delete(id));
 }
 async function clearInspections(){
+  if(speicherModus==='supabase'){await supaFetch('spk_inspections?erstellt=gte.0',{method:'DELETE',headers:{Prefer:'return=minimal'}});return;}
   if(speicherModus!=='indexeddb'){mem.inspections.clear();return;}
   await reqP(tx('inspections','readwrite').clear());
 }
@@ -512,7 +584,7 @@ async function clearInspections(){
 /* ============================================================
    Bilder: verkleinern -> JPEG Blob
    ============================================================ */
-function bildVerkleinern(file,maxKante=1600,qual=0.82){
+function bildVerkleinern(file,maxKante=1280,qual=0.62){
   return new Promise((res,rej)=>{
     const img=new Image(), url=URL.createObjectURL(file);
     img.onload=()=>{
@@ -768,6 +840,48 @@ $('#btnStdSpeichern').onclick=async()=>{
   toast('Vorbelegung gespeichert');
 };
 
+/* ---- Cloud-Sync Bedienung ---- */
+function lokalerModus(){return db?'indexeddb':'speicher';}
+function renderCloudUI(){
+  const an=speicherModus==='supabase';
+  const box=$('#cloudAn'), aus=$('#cloudAus');
+  if(box) box.style.display=an?'block':'none';
+  if(aus) aus.style.display=an?'none':'block';
+  const st=$('#cloudStatus');
+  if(st) st.innerHTML= an
+    ? '✓ <b>Verbunden.</b> Daten werden zwischen allen verbundenen Geräten geteilt.'
+    : 'Aktuell <b>nur auf diesem Gerät</b>. Zum Teilen zwischen Handy und Rechner hier verbinden.';
+  if(an && $('#cfgUrl')) $('#cfgUrl').value=SUPA.url;
+}
+$('#btnCloudConnect').onclick=async()=>{
+  const url=$('#cfgUrl').value.trim().replace(/\/+$/,'');
+  const key=$('#cfgKey').value.trim();
+  if(!/^https:\/\/.+\.supabase\.co$/.test(url)||key.length<20){alert('Bitte eine gültige Supabase-URL (https://….supabase.co) und den Anon-Key eingeben.');return;}
+  const alt=speicherModus; SUPA={url,key}; speicherModus='supabase';
+  try{
+    await supaFetch('spk_settings?select=key&limit=1');
+    localStorage.setItem('spk_supa',JSON.stringify(SUPA));
+    toast('Mit Cloud verbunden ✓');
+    await ladeStammdaten(); resetFormular(); await aktualisiereBadge(); renderCloudUI();
+  }catch(err){
+    speicherModus=alt; SUPA=null;
+    alert('Verbindung fehlgeschlagen: '+err.message);
+  }
+};
+$('#btnCloudDisconnect').onclick=async()=>{
+  if(!confirm('Cloud auf diesem Gerät trennen? Es nutzt dann wieder nur den lokalen Speicher (die Daten in der Cloud bleiben erhalten).'))return;
+  localStorage.removeItem('spk_supa'); SUPA=null; speicherModus=lokalerModus();
+  toast('Cloud getrennt');
+  await ladeStammdaten(); resetFormular(); await aktualisiereBadge(); renderCloudUI();
+};
+$('#btnInvite').onclick=()=>{
+  const link=cfgLink();
+  const ta=$('#inviteOut'); ta.style.display='block'; ta.value=link; ta.focus(); ta.select();
+  if(navigator.share){navigator.share({title:'Spindkontrolle einrichten',text:'Diesen Link öffnen, dann ist die App eingerichtet.',url:link}).catch(()=>{});}
+  else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Link kopiert')).catch(()=>{});}
+  else toast('Link markiert – kopieren und senden');
+};
+
 /* ============================================================
    Erfassen – Formular
    ============================================================ */
@@ -885,7 +999,7 @@ async function renderListe(){
       <div class="thumb">${thumb}</div>
       <div class="info">
         <div class="name">${escapeHtml(e.name)}</div>
-        <div class="meta">Spind ${escapeHtml(e.spind)} · ${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')}${e.fotos&&e.fotos.length?' · '+e.fotos.length+' 📷':''}</div>
+        <div class="meta">Spind ${escapeHtml(e.spind)} · ${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')}${fotoAnzahl(e)?' · '+fotoAnzahl(e)+' 📷':''}</div>
       </div>
       ${pille}
     </div>`;
@@ -993,9 +1107,11 @@ async function drucken(mitFotos){
     const badge=e.ergebnis==='auffaellig'
       ?'<span class="druck-badge warn">AUFFÄLLIG</span>':'<span class="druck-badge ok">UNAUFFÄLLIG</span>';
     let fotoBlock='';
-    const anzahl=(e.fotos||[]).length;
+    const anzahl=fotoAnzahl(e);
     if(mitFotos && anzahl){
-      const komp=await Promise.all(e.fotos.map(f=>fotoFuerDruck(f.dataURL)));
+      let fotosArr=e.fotos;
+      if(!fotosArr){const full=await getInspection(e.id);fotosArr=(full&&full.fotos)||[];}
+      const komp=await Promise.all(fotosArr.map(f=>fotoFuerDruck(f.dataURL)));
       fotoBlock=`<div class="druck-fotos">${komp.map(d=>`<img src="${d}">`).join('')}</div>`;
     }else if(!mitFotos && anzahl){
       fotoBlock=`<div class="druck-fuss">${anzahl} Foto(s) vorhanden – im Tool einsehbar.</div>`;
@@ -1040,7 +1156,7 @@ async function jsonExport(){
     typ:'dreiturm-spindkontrolle', version:1, exportiert:new Date().toISOString(),
     settings:{namen:state.namen,pruefer:state.pruefer,zeugen:state.zeugen,spindeGesamt:state.spindeGesamt,
       standardPruefer:state.standardPruefer,standardZeugen:state.standardZeugen},
-    inspections:await getAllInspections()
+    inspections:await getAllInspections(true)
   };
   const d=new Date();
   downloadDatei(JSON.stringify(daten),`spindkontrolle_backup_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.json`,'application/json');
@@ -1108,10 +1224,22 @@ $('#btnAllesLoeschen').onclick=async()=>{
     const w=document.getElementById('speicherWarnung');
     if(w) w.style.display='block';
   }
+  // Cloud-Konfiguration (Einladungslink oder gespeichert)
+  ladeSupaConfig();
+  if(SUPA){
+    speicherModus='supabase';
+    try{ await supaFetch('spk_settings?select=key&limit=1'); }
+    catch(err){
+      console.error('Cloud nicht erreichbar:',err);
+      toast('Cloud nicht erreichbar – lokaler Modus aktiv');
+      speicherModus=lokalerModus(); SUPA=null;
+    }
+  }
   try{
     await ladeStammdaten();
     resetFormular();
     await aktualisiereBadge();
+    renderCloudUI();
   }catch(err){
     console.error('Init-Fehler:',err);
     toast('Hinweis: '+err.message);
