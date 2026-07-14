@@ -62,8 +62,8 @@
     position:sticky;top:0;z-index:10;
   }
   nav.tabs button{
-    flex:1;border:0;background:none;padding:12px 6px;font-size:13.5px;font-weight:600;
-    color:var(--grau);cursor:pointer;border-bottom:3px solid transparent;font-family:inherit;
+    flex:1;border:0;background:none;padding:12px 3px;font-size:12.5px;font-weight:600;
+    color:var(--grau);cursor:pointer;border-bottom:3px solid transparent;font-family:inherit;white-space:nowrap;
   }
   nav.tabs button.aktiv{color:var(--blau);border-bottom-color:var(--blau)}
 
@@ -213,6 +213,7 @@
 <nav class="tabs">
   <button data-view="erfassen" class="aktiv">＋ Erfassen</button>
   <button data-view="uebersicht">☰ Übersicht</button>
+  <button data-view="personen">👥 Personen</button>
   <button data-view="stammdaten">⚙ Stammdaten</button>
 </nav>
 
@@ -324,6 +325,16 @@
       <button class="btn geist" id="btnJsonExport">⬇ Backup (JSON)</button>
       <button class="btn geist" id="btnCsv">⬇ CSV</button>
     </div>
+  </section>
+
+  <!-- ============ PERSONEN ============ -->
+  <section id="view-personen" class="view">
+    <h2 class="abschnitt">Mitarbeiter – zuletzt kontrolliert</h2>
+    <p class="hinweis" style="margin-top:-8px">Sortiert: <b>am längsten nicht kontrolliert</b> (bzw. „noch nie") zuerst. Antippen startet eine neue Kontrolle für die Person.</p>
+    <div class="filterzeile">
+      <input type="text" id="personSuche" placeholder="🔍 Name suchen">
+    </div>
+    <div id="personListe"></div>
   </section>
 
   <!-- ============ STAMMDATEN ============ -->
@@ -639,6 +650,7 @@ function wechsleView(name){
   $$('.view').forEach(v=>v.classList.remove('aktiv'));
   $('#view-'+name).classList.add('aktiv');
   if(name==='uebersicht')renderListe();
+  if(name==='personen')renderPersonen();
   // Frisches (noch leeres) Erfassen-Formular übernimmt die aktuelle Vorbelegung
   if(name==='erfassen' && !$('#fName').value && !$('#fSpind').value){
     $('#fDatum').value=heuteISO(); $('#fZeit').value=jetztHM();
@@ -1020,6 +1032,72 @@ async function renderListe(){
 }
 $('#filterSuche').oninput=renderListe;
 $('#filterErgebnis').onchange=renderListe;
+
+/* ============================================================
+   Mitarbeiter-Ansicht: zuletzt kontrolliert
+   ============================================================ */
+function relZeit(ms){
+  if(!ms)return '';
+  const tage=Math.floor((Date.now()-ms)/86400000);
+  if(tage<=0)return 'heute';
+  if(tage===1)return 'gestern';
+  if(tage<7)return 'vor '+tage+' Tagen';
+  if(tage<14)return 'vor 1 Woche';
+  if(tage<70)return 'vor '+Math.round(tage/7)+' Wochen';
+  return 'vor '+Math.round(tage/30)+' Monaten';
+}
+async function renderPersonen(){
+  const alle=await getAllInspections();
+  const stats={};
+  for(const e of alle){
+    const n=(e.name||'').trim(); if(!n)continue;
+    if(!stats[n])stats[n]={count:0,last:null};
+    stats[n].count++;
+    if(!stats[n].last || (e.erstellt||0)>(stats[n].last.erstellt||0)) stats[n].last=e;
+  }
+  const set=new Set(state.namen.map(s=>s.trim()).filter(Boolean));
+  Object.keys(stats).forEach(n=>set.add(n));
+  let personen=[...set].map(n=>({name:n,count:stats[n]?stats[n].count:0,last:stats[n]?stats[n].last:null}));
+  personen.sort((a,b)=>{
+    const la=a.last?a.last.erstellt:-1, lb=b.last?b.last.erstellt:-1;
+    if(la===-1&&lb===-1)return a.name.localeCompare(b.name);
+    if(la===-1)return -1; if(lb===-1)return 1;
+    return la-lb;
+  });
+  const such=$('#personSuche').value.trim().toLowerCase();
+  if(such)personen=personen.filter(p=>p.name.toLowerCase().includes(such));
+  const c=$('#personListe');
+  if(!set.size){
+    c.innerHTML='<div class="leer">Noch keine Mitarbeiter. Bitte unter <b>Stammdaten</b> die Namensliste hinterlegen.</div>';
+    return;
+  }
+  if(!personen.length){c.innerHTML='<div class="leer">Keine Treffer.</div>';return;}
+  c.innerHTML=personen.map(p=>{
+    const nie=!p.last;
+    const pille=nie
+      ?'<span class="pille warn">noch nie</span>'
+      :(p.last.ergebnis==='auffaellig'?'<span class="pille warn">⚠ Auffällig</span>':'<span class="pille ok">✓ Unauffällig</span>');
+    const meta=nie?'Noch nie kontrolliert'
+      :`Zuletzt: ${fmtDatum(p.last.datum)} · ${relZeit(p.last.erstellt||0)} · ${p.count}×`;
+    const init=escapeHtml(p.name.split(/\s+/).map(w=>w[0]||'').join('').slice(0,2).toUpperCase()||'?');
+    return `<div class="eintrag" data-name="${escapeHtml(p.name)}">
+      <div class="thumb">${init}</div>
+      <div class="info">
+        <div class="name">${escapeHtml(p.name)}</div>
+        <div class="meta">${meta}</div>
+      </div>
+      ${pille}
+    </div>`;
+  }).join('');
+  $$('.eintrag',c).forEach(el=>el.onclick=()=>{
+    const name=el.dataset.name;
+    wechsleView('erfassen');
+    $('#fName').value=name;
+    $('#fSpind').focus();
+    toast('Neue Kontrolle für '+name);
+  });
+}
+$('#personSuche').oninput=renderPersonen;
 
 async function aktualisiereFortschritt(){
   const alle=cacheEintraege.length?cacheEintraege:await getAllInspections();
