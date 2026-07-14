@@ -101,6 +101,14 @@
   .segment button.wahl-warn{background:var(--rot);color:#fff}
   .segment button + button{border-left:1px solid #c3d2dc}
 
+  /* ---------- Mehrfach-Auswahl (Zeugen) ---------- */
+  .check-gruppe{display:flex;flex-wrap:wrap;gap:8px}
+  .check-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #c3d2dc;border-radius:22px;
+    padding:8px 14px;font-size:14.5px;cursor:pointer;background:#fff;user-select:none}
+  .check-chip input{width:17px;height:17px;accent-color:var(--blau);margin:0}
+  .check-chip.an{border-color:var(--blau);background:var(--blau-hell);color:var(--blau-dunkel);font-weight:600}
+  .check-gruppe:empty::after{content:"Noch keine Zeugen hinterlegt – siehe Stammdaten.";color:var(--grau);font-size:12.5px}
+
   /* ---------- Fotos ---------- */
   .foto-hinzu{display:flex;gap:10px;flex-wrap:wrap}
   .foto-btn{position:relative;overflow:hidden}
@@ -241,10 +249,11 @@
         </label>
       </div>
 
-      <label class="feld">
-        <span>Zeuge / anwesende Zweitperson</span>
-        <input id="fZeuge" type="text" placeholder="Name der anwesenden Person">
-      </label>
+      <div class="feld">
+        <span style="display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:5px">Zeuge(n) / anwesende Personen</span>
+        <div id="zeugenAuswahl" class="check-gruppe"></div>
+        <input id="fZeugeExtra" type="text" placeholder="Weitere anwesende Person (optional)" style="margin-top:10px">
+      </div>
 
       <label class="feld" style="margin-bottom:8px">
         <span>Ergebnis der Kontrolle *</span>
@@ -338,6 +347,28 @@
         <textarea id="sPruefer" rows="3" placeholder="Wird beim Erfassen zur Auswahl angeboten"></textarea>
       </label>
       <button class="btn sekundaer" id="btnPrueferSpeichern">Prüfer speichern</button>
+    </div>
+
+    <div class="karte">
+      <label class="feld" style="margin-bottom:8px">
+        <span>Zeugen (ein Name pro Zeile)</span>
+        <textarea id="sZeugen" rows="3" placeholder="Chiara Wolf&#10;Tobias Alt&#10;David Hartmann"></textarea>
+      </label>
+      <button class="btn sekundaer" id="btnZeugenSpeichern">Zeugen speichern</button>
+    </div>
+
+    <div class="karte">
+      <h2 class="abschnitt" style="margin-top:0">Standard-Vorbelegung</h2>
+      <p class="hinweis" style="margin-top:0;margin-bottom:14px">Diese Auswahl ist bei <b>jeder neuen Kontrolle automatisch vorausgewählt</b> – ideal für eine Kontrollrunde mit gleichem Team.</p>
+      <label class="feld">
+        <span>Standard-Prüfer/in</span>
+        <input list="prueferliste" id="sStdPruefer" type="text" placeholder="Name der Prüfer/in">
+      </label>
+      <div class="feld">
+        <span style="display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:5px">Standard-Zeugen</span>
+        <div id="stdZeugenAuswahl" class="check-gruppe"></div>
+      </div>
+      <button class="btn primaer" id="btnStdSpeichern">Vorbelegung speichern</button>
     </div>
 
     <div class="karte">
@@ -497,7 +528,8 @@ function dataURLtoBlob(dataURL){
    State
    ============================================================ */
 let state={
-  namen:[], pruefer:[], spindeGesamt:150,
+  namen:[], pruefer:[], zeugen:[], spindeGesamt:150,
+  standardPruefer:'', standardZeugen:[],
   ergebnis:'unauffaellig',
   fotos:[]  // {blob, url}
 };
@@ -511,6 +543,11 @@ function wechsleView(name){
   $$('.view').forEach(v=>v.classList.remove('aktiv'));
   $('#view-'+name).classList.add('aktiv');
   if(name==='uebersicht')renderListe();
+  // Frisches (noch leeres) Erfassen-Formular übernimmt die aktuelle Vorbelegung
+  if(name==='erfassen' && !$('#fName').value && !$('#fSpind').value){
+    $('#fDatum').value=heuteISO(); $('#fZeit').value=jetztHM();
+    formVorbelegen();
+  }
   window.scrollTo(0,0);
 }
 
@@ -521,11 +558,47 @@ async function ladeStammdaten(){
   state.namen=await getSetting('namen',[]);
   state.pruefer=await getSetting('pruefer',[]);
   state.spindeGesamt=await getSetting('spindeGesamt',150);
+  // Zeugen: beim ersten Start mit den drei Namen vorbelegen
+  state.zeugen=await getSetting('zeugen',null);
+  if(state.zeugen===null){
+    state.zeugen=['Chiara Wolf','Tobias Alt','David Hartmann'];
+    await setSetting('zeugen',state.zeugen);
+  }
+  state.standardPruefer=await getSetting('standardPruefer','');
+  state.standardZeugen=await getSetting('standardZeugen',[]);
   $('#sNamen').value=state.namen.join('\n');
   $('#sPruefer').value=state.pruefer.join('\n');
+  $('#sZeugen').value=state.zeugen.join('\n');
+  $('#sStdPruefer').value=state.standardPruefer;
   $('#sSpindeGesamt').value=state.spindeGesamt;
   fuelleDatalists();
+  renderStdZeugenAuswahl();
   $('#keinSetupHinweis').style.display=state.namen.length?'none':'block';
+}
+
+/* ---- Chips (Mehrfach-Auswahl) ---- */
+function chipHtml(pfx,i,name){
+  const id=pfx+'_'+i;
+  return `<label class="check-chip"><input type="checkbox" id="${id}" value="${escapeHtml(name)}">${escapeHtml(name)}</label>`;
+}
+function syncChip(inp){inp.closest('.check-chip').classList.toggle('an',inp.checked);}
+function bindChips(box){$$('input',box).forEach(inp=>{syncChip(inp);inp.onchange=()=>syncChip(inp);});}
+function getChecked(box){return $$('input:checked',box).map(i=>i.value);}
+function setChecked(box,werte){$$('input',box).forEach(inp=>{inp.checked=werte.includes(inp.value);syncChip(inp);});}
+function renderZeugenAuswahl(){
+  const box=$('#zeugenAuswahl');
+  box.innerHTML=state.zeugen.map((z,i)=>chipHtml('zg',i,z)).join('');
+  bindChips(box);
+}
+function renderStdZeugenAuswahl(){
+  const box=$('#stdZeugenAuswahl');
+  box.innerHTML=state.zeugen.map((z,i)=>chipHtml('std',i,z)).join('');
+  setChecked(box,state.standardZeugen);
+  bindChips(box);
+}
+function zeugenText(e){
+  if(Array.isArray(e.zeugen))return e.zeugen.join(', ');
+  return e.zeuge||''; // Rückwärtskompatibilität mit alten Einträgen
 }
 function parseZeilen(text){return text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean)
   .filter((v,i,a)=>a.indexOf(v)===i);}
@@ -655,14 +728,38 @@ $('#btnPrueferSpeichern').onclick=async()=>{
   fuelleDatalists();
   toast('Prüfer gespeichert');
 };
+$('#btnZeugenSpeichern').onclick=async()=>{
+  state.zeugen=parseZeilen($('#sZeugen').value);
+  // Standard-Zeugen auf noch vorhandene Namen beschränken
+  state.standardZeugen=state.standardZeugen.filter(z=>state.zeugen.includes(z));
+  await setSetting('zeugen',state.zeugen);
+  await setSetting('standardZeugen',state.standardZeugen);
+  renderStdZeugenAuswahl();
+  toast('Zeugen gespeichert');
+};
+$('#btnStdSpeichern').onclick=async()=>{
+  state.standardPruefer=$('#sStdPruefer').value.trim();
+  state.standardZeugen=getChecked($('#stdZeugenAuswahl'));
+  await setSetting('standardPruefer',state.standardPruefer);
+  await setSetting('standardZeugen',state.standardZeugen);
+  toast('Vorbelegung gespeichert');
+};
 
 /* ============================================================
    Erfassen – Formular
    ============================================================ */
+function formVorbelegen(){
+  // Standard-Prüfer/in + Standard-Zeugen übernehmen
+  $('#fPruefer').value=state.standardPruefer||'';
+  renderZeugenAuswahl();
+  setChecked($('#zeugenAuswahl'),state.standardZeugen);
+}
 function resetFormular(){
   $('#formErfassen').reset();
   $('#fDatum').value=heuteISO();
   $('#fZeit').value=jetztHM();
+  formVorbelegen();
+  $('#fZeugeExtra').value='';
   state.ergebnis='unauffaellig';
   setzeErgebnisUI();
   state.fotos.forEach(f=>URL.revokeObjectURL(f.url));
@@ -714,10 +811,14 @@ $('#formErfassen').onsubmit=async(e)=>{
   const fotos=[];
   for(const f of state.fotos){fotos.push({dataURL:await blobToDataURL(f.blob)});}
 
+  const zeugen=getChecked($('#zeugenAuswahl'));
+  const extraZeuge=$('#fZeugeExtra').value.trim();
+  if(extraZeuge) zeugen.push(extraZeuge);
+
   const eintrag={
     id:(crypto.randomUUID?crypto.randomUUID():'id-'+Date.now()+'-'+Math.round(performance.now())),
     name, spind, pruefer,
-    zeuge:$('#fZeuge').value.trim(),
+    zeugen,
     datum:$('#fDatum').value, zeit:$('#fZeit').value,
     ergebnis:state.ergebnis,
     bemerkung:$('#fBemerkung').value.trim(),
@@ -804,7 +905,7 @@ async function zeigeDetail(id){
     <div class="detail-zeile"><b>Mitarbeiter/in</b><span>${escapeHtml(e.name)}</span></div>
     <div class="detail-zeile"><b>Datum / Uhrzeit</b><span>${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')}</span></div>
     <div class="detail-zeile"><b>Prüfer/in</b><span>${escapeHtml(e.pruefer||'–')}</span></div>
-    <div class="detail-zeile"><b>Zeuge</b><span>${escapeHtml(e.zeuge||'–')}</span></div>
+    <div class="detail-zeile"><b>Zeuge(n)</b><span>${escapeHtml(zeugenText(e)||'–')}</span></div>
     <div class="detail-zeile"><b>Ergebnis</b><span>${e.ergebnis==='auffaellig'?'Auffällig':'Unauffällig'}</span></div>
     ${e.bemerkung?`<div class="detail-zeile"><b>Bemerkung</b><span style="text-align:right;max-width:60%">${escapeHtml(e.bemerkung)}</span></div>`:''}
     ${fotos?`<div class="detail-fotos">${fotos}</div>`:'<p class="hinweis">Keine Fotos.</p>'}
@@ -851,7 +952,7 @@ async function drucken(){
       <table>
         <tr><td class="k">Datum / Uhrzeit</td><td>${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')} Uhr</td></tr>
         <tr><td class="k">Prüfer/in</td><td>${escapeHtml(e.pruefer||'–')}</td></tr>
-        <tr><td class="k">Zeuge</td><td>${escapeHtml(e.zeuge||'–')}</td></tr>
+        <tr><td class="k">Zeuge(n)</td><td>${escapeHtml(zeugenText(e)||'–')}</td></tr>
         ${e.bemerkung?`<tr><td class="k">Bemerkung</td><td>${escapeHtml(e.bemerkung)}</td></tr>`:''}
       </table>
       ${fotos?`<div class="druck-fotos">${fotos}</div>`:''}
@@ -881,7 +982,8 @@ function downloadDatei(inhalt,dateiname,typ){
 async function jsonExport(){
   const daten={
     typ:'dreiturm-spindkontrolle', version:1, exportiert:new Date().toISOString(),
-    settings:{namen:state.namen,pruefer:state.pruefer,spindeGesamt:state.spindeGesamt},
+    settings:{namen:state.namen,pruefer:state.pruefer,zeugen:state.zeugen,spindeGesamt:state.spindeGesamt,
+      standardPruefer:state.standardPruefer,standardZeugen:state.standardZeugen},
     inspections:await getAllInspections()
   };
   const d=new Date();
@@ -895,8 +997,8 @@ async function csvExport(){
   const alle=await getAllInspections();
   if(!alle.length){toast('Keine Daten für CSV');return;}
   const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
-  const kopf=['Name','Spindnummer','Datum','Uhrzeit','Pruefer','Zeuge','Ergebnis','Bemerkung','Anzahl Fotos'];
-  const zeilen=alle.map(e=>[e.name,e.spind,fmtDatum(e.datum),e.zeit,e.pruefer,e.zeuge,
+  const kopf=['Name','Spindnummer','Datum','Uhrzeit','Pruefer','Zeugen','Ergebnis','Bemerkung','Anzahl Fotos'];
+  const zeilen=alle.map(e=>[e.name,e.spind,fmtDatum(e.datum),e.zeit,e.pruefer,zeugenText(e),
     e.ergebnis==='auffaellig'?'Auffällig':'Unauffällig',e.bemerkung,(e.fotos||[]).length].map(q).join(';'));
   const csv='﻿'+[kopf.map(q).join(';'),...zeilen].join('\r\n');
   const d=new Date();
@@ -913,10 +1015,17 @@ $('#jsonImport').onchange=async(e)=>{
     if(daten.typ!=='dreiturm-spindkontrolle')throw new Error('Falsches Dateiformat');
     if(!confirm('Backup importieren? Vorhandene Kontrollen mit gleicher ID werden überschrieben, neue hinzugefügt.'))return;
     if(daten.settings){
-      state.namen=daten.settings.namen||[];state.pruefer=daten.settings.pruefer||[];
-      state.spindeGesamt=daten.settings.spindeGesamt||150;
+      const s=daten.settings;
+      state.namen=s.namen||[];state.pruefer=s.pruefer||[];
+      state.zeugen=s.zeugen||state.zeugen;
+      state.spindeGesamt=s.spindeGesamt||150;
+      state.standardPruefer=s.standardPruefer||'';
+      state.standardZeugen=s.standardZeugen||[];
       await setSetting('namen',state.namen);await setSetting('pruefer',state.pruefer);
+      await setSetting('zeugen',state.zeugen);
       await setSetting('spindeGesamt',state.spindeGesamt);
+      await setSetting('standardPruefer',state.standardPruefer);
+      await setSetting('standardZeugen',state.standardZeugen);
     }
     for(const ins of (daten.inspections||[]))await addInspection(ins);
     await ladeStammdaten();await aktualisiereBadge();
