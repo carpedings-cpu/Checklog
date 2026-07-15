@@ -155,6 +155,9 @@
   .eintrag-del{border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:var(--grau);
     padding:8px;border-radius:9px;flex:0 0 auto}
   .eintrag-del:active,.eintrag-del:hover{background:var(--rot-hell);color:var(--rot)}
+  .ma-zeile{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:7px 10px;border:1px solid var(--blau-linie);border-radius:8px;margin-bottom:6px;background:#fff;font-size:14px}
+  .ma-zeile > span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   .leer{text-align:center;color:var(--grau);padding:40px 16px}
   .leer svg{opacity:.4;margin-bottom:8px}
@@ -402,6 +405,12 @@
         <button class="btn primaer" id="btnNamenSpeichern">Speichern</button>
         <span class="hinweis" id="namenStatus" style="align-self:center"></span>
       </div>
+    </div>
+
+    <div class="karte">
+      <span style="display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:8px">Hinterlegte Mitarbeiter (<span id="mitarbeiterAnzahl">0</span>) – einzeln löschbar</span>
+      <input type="text" id="mitarbeiterSuche" placeholder="🔍 Name / Personalnr. suchen" style="margin-bottom:10px">
+      <div id="mitarbeiterListe" style="max-height:320px;overflow:auto"></div>
     </div>
 
     <div class="karte">
@@ -794,8 +803,33 @@ async function ladeStammdaten(){
   $('#sSpindeGesamt').value=state.spindeGesamt;
   fuelleDatalists();
   renderStdZeugenAuswahl();
+  renderMitarbeiterListe();
   $('#keinSetupHinweis').style.display=state.mitarbeiter.length?'none':'block';
 }
+
+/* ---- Mitarbeiterliste in Stammdaten: einzeln löschbar ---- */
+function renderMitarbeiterListe(){
+  const box=$('#mitarbeiterListe'); if(!box) return;
+  $('#mitarbeiterAnzahl').textContent=state.mitarbeiter.length;
+  const such=($('#mitarbeiterSuche')?.value||'').trim().toLowerCase();
+  const liste=state.mitarbeiter.map(m=>({m,label:mLabel(m)}))
+    .filter(x=>x.label && (!such || x.label.toLowerCase().includes(such)));
+  if(!state.mitarbeiter.length){ box.innerHTML='<p class="hinweis" style="margin:4px 0">Noch keine Mitarbeiter hinterlegt.</p>'; return; }
+  if(!liste.length){ box.innerHTML='<p class="hinweis" style="margin:4px 0">Keine Treffer.</p>'; return; }
+  box.innerHTML=liste.map(x=>`<div class="ma-zeile"><span>${escapeHtml(x.label)}</span><button class="eintrag-del" data-key="${escapeHtml(x.label)}" title="Mitarbeiter löschen" aria-label="Löschen">🗑</button></div>`).join('');
+  $$('.eintrag-del',box).forEach(btn=>btn.onclick=async()=>{
+    const key=btn.dataset.key;
+    if(!confirm('Diesen Mitarbeiter aus der Liste löschen?\n\n'+key)) return;
+    state.mitarbeiter=state.mitarbeiter.filter(m=>mLabel(m)!==key);
+    try{ await setSetting('mitarbeiter',state.mitarbeiter); }
+    catch(err){ alert('Löschen fehlgeschlagen (Verbindung?). Bitte erneut versuchen.'); return; }
+    $('#sNamen').value=mitarbeiterZuText(state.mitarbeiter);
+    fuelleDatalists(); renderMitarbeiterListe();
+    $('#keinSetupHinweis').style.display=state.mitarbeiter.length?'none':'block';
+    toast('Mitarbeiter gelöscht');
+  });
+}
+if($('#mitarbeiterSuche')) $('#mitarbeiterSuche').oninput=renderMitarbeiterListe;
 
 /* ---- Chips (Mehrfach-Auswahl) ---- */
 function chipHtml(pfx,i,name){
@@ -835,7 +869,7 @@ $('#btnNamenSpeichern').onclick=async()=>{
   state.spindeGesamt=parseInt($('#sSpindeGesamt').value,10)||state.mitarbeiter.length||150;
   await setSetting('mitarbeiter',state.mitarbeiter);
   await setSetting('spindeGesamt',state.spindeGesamt);
-  fuelleDatalists();
+  fuelleDatalists(); renderMitarbeiterListe();
   $('#keinSetupHinweis').style.display=state.mitarbeiter.length?'none':'block';
   $('#namenStatus').textContent=`${state.mitarbeiter.length} Mitarbeiter gespeichert`;
   toast(`${state.mitarbeiter.length} Mitarbeiter gespeichert`);
@@ -958,7 +992,7 @@ $('#namenUpload').onchange=async(e)=>{
     state.spindeGesamt=parseInt($('#sSpindeGesamt').value,10)||liste.length;
     await setSetting('mitarbeiter',state.mitarbeiter);
     await setSetting('spindeGesamt',state.spindeGesamt);
-    fuelleDatalists();
+    fuelleDatalists(); renderMitarbeiterListe();
     $('#keinSetupHinweis').style.display='none';
     $('#namenStatus').textContent=`${liste.length} Mitarbeiter importiert`;
     toast(`${liste.length} Mitarbeiter aus „${file.name}" importiert ✓`);
