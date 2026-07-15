@@ -152,6 +152,9 @@
   .pille{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;white-space:nowrap}
   .pille.ok{background:var(--gruen-hell);color:var(--gruen)}
   .pille.warn{background:var(--rot-hell);color:var(--rot)}
+  .eintrag-del{border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:var(--grau);
+    padding:8px;border-radius:9px;flex:0 0 auto}
+  .eintrag-del:active,.eintrag-del:hover{background:var(--rot-hell);color:var(--rot)}
 
   .leer{text-align:center;color:var(--grau);padding:40px 16px}
   .leer svg{opacity:.4;margin-bottom:8px}
@@ -1088,9 +1091,18 @@ async function renderListe(){
         <div class="meta">Spind ${escapeHtml(e.spind)} · ${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')}${fotoAnzahl(e)?' · '+fotoAnzahl(e)+' 📷':''}</div>
       </div>
       ${pille}
+      <button class="eintrag-del" data-del="${e.id}" title="Kontrolle löschen" aria-label="Löschen">🗑</button>
     </div>`;
   }).join('');
   $$('.eintrag',c).forEach(el=>el.onclick=()=>zeigeDetail(el.dataset.id));
+  $$('.eintrag-del',c).forEach(btn=>btn.onclick=async(ev)=>{
+    ev.stopPropagation();
+    if(!confirm('Diese Kontrolle wirklich löschen?')) return;
+    try{ await deleteInspection(btn.dataset.del); }
+    catch(err){ alert('Löschen fehlgeschlagen (Verbindung?). Bitte erneut versuchen.'); return; }
+    toast('Kontrolle gelöscht');
+    await aktualisiereBadge(); renderListe();
+  });
 }
 $('#filterSuche').oninput=renderListe;
 $('#filterErgebnis').onchange=renderListe;
