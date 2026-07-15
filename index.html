@@ -326,10 +326,6 @@
       <div class="hinweis" id="fortDetail"></div>
     </div>
 
-    <div class="btn-reihe" style="margin-bottom:12px">
-      <button class="btn geist" id="btnRefresh">↻ Aktualisieren</button>
-    </div>
-
     <div class="filterzeile">
       <input type="text" id="filterSuche" placeholder="🔍 Name / Spind suchen">
       <select id="filterErgebnis">
@@ -405,12 +401,6 @@
         <button class="btn primaer" id="btnNamenSpeichern">Speichern</button>
         <span class="hinweis" id="namenStatus" style="align-self:center"></span>
       </div>
-    </div>
-
-    <div class="karte">
-      <span style="display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:8px">Hinterlegte Mitarbeiter (<span id="mitarbeiterAnzahl">0</span>) – einzeln löschbar</span>
-      <input type="text" id="mitarbeiterSuche" placeholder="🔍 Name / Personalnr. suchen" style="margin-bottom:10px">
-      <div id="mitarbeiterListe" style="max-height:320px;overflow:auto"></div>
     </div>
 
     <div class="karte">
@@ -1255,7 +1245,6 @@ async function renderListe(){
 }
 $('#filterSuche').oninput=renderListe;
 $('#filterErgebnis').onchange=renderListe;
-$('#btnRefresh').onclick=async()=>{ await aktualisiereAnsicht(); toast('Aktualisiert'); };
 
 /* ============================================================
    Mitarbeiter-Ansicht: zuletzt kontrolliert
