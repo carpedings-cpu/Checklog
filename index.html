@@ -237,10 +237,22 @@
     </div>
     <form id="formErfassen" class="karte" autocomplete="off">
       <label class="feld">
-        <span>Personalnr. + Mitarbeiter/in *</span>
-        <input list="namensliste" id="fName" type="text" placeholder="Personalnr. oder Name eingeben/auswählen" required>
-        <datalist id="namensliste"></datalist>
+        <span>Personalnummer *</span>
+        <input list="pnrliste" id="fPnr" type="text" inputmode="text" placeholder="z. B. 10234 – füllt Name automatisch" required>
+        <datalist id="pnrliste"></datalist>
       </label>
+
+      <div class="zwei">
+        <label class="feld">
+          <span>Nachname *</span>
+          <input list="nachnameliste" id="fNachname" type="text" placeholder="Nachname" required>
+          <datalist id="nachnameliste"></datalist>
+        </label>
+        <label class="feld">
+          <span>Vorname</span>
+          <input id="fVorname" type="text" placeholder="Vorname">
+        </label>
+      </div>
 
       <div class="zwei">
         <label class="feld">
@@ -376,8 +388,8 @@
             <input type="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain" id="namenUpload">
           </button>
         </div>
-        <textarea id="sNamen" rows="8" placeholder="10234 Mustermann Max&#10;10235 Musterfrau Erika&#10;…"></textarea>
-        <p class="hinweis">Datei mit Spalten <b>in dieser Reihenfolge</b>: <b>1. Personalnummer, 2. Nachname, 3. Vorname</b> (weitere Spalten werden ignoriert, Kopfzeile wird erkannt). Übernommen wird je Zeile „<b>Personalnr. Nachname Vorname</b>". Manuell: eine Person pro Zeile, gleiche Reihenfolge.</p>
+        <textarea id="sNamen" rows="8" placeholder="10234; Mustermann; Max&#10;10235; Musterfrau; Erika&#10;…"></textarea>
+        <p class="hinweis"><b>Datei hochladen</b> mit Spalten in dieser Reihenfolge: <b>1. Personalnummer, 2. Nachname, 3. Vorname</b> (weitere Spalten werden ignoriert, Kopfzeile wird erkannt). <b>Manuell</b>: je Zeile <b>Personalnr. ; Nachname ; Vorname</b> (mit Semikolon getrennt).</p>
       </div>
       <div class="zwei">
         <label class="feld">
@@ -605,7 +617,8 @@ async function getSetting(key,def=null){
 }
 async function addInspection(obj){
   if(speicherModus==='supabase'){
-    const row={id:obj.id,name:obj.name,spind:obj.spind,pruefer:obj.pruefer,
+    const row={id:obj.id,name:obj.name,pnr:obj.pnr||'',nachname:obj.nachname||'',vorname:obj.vorname||'',
+      spind:obj.spind,pruefer:obj.pruefer,
       zeugen:obj.zeugen||[],datum:obj.datum,zeit:obj.zeit,ergebnis:obj.ergebnis,
       bemerkung:obj.bemerkung,fotos:obj.fotos||[],foto_anzahl:(obj.fotos||[]).length,erstellt:obj.erstellt};
     await supaFetch('spk_inspections?on_conflict=id',{method:'POST',
@@ -617,7 +630,7 @@ async function addInspection(obj){
 }
 async function getAllInspections(withFotos=false){
   if(speicherModus==='supabase'){
-    const cols=withFotos?'*':'id,name,spind,pruefer,zeugen,datum,zeit,ergebnis,bemerkung,foto_anzahl,erstellt';
+    const cols=withFotos?'*':'id,name,pnr,nachname,vorname,spind,pruefer,zeugen,datum,zeit,ergebnis,bemerkung,foto_anzahl,erstellt';
     return (await supaFetch('spk_inspections?select='+cols+'&order=erstellt.desc'))||[];
   }
   const list = speicherModus!=='indexeddb'
@@ -676,11 +689,12 @@ function dataURLtoBlob(dataURL){
    State
    ============================================================ */
 let state={
-  namen:[], pruefer:[], zeugen:[], spindeGesamt:150,
+  mitarbeiter:[], pruefer:[], zeugen:[], spindeGesamt:150,
   standardPruefer:'', standardZeugen:[],
   ergebnis:'unauffaellig',
   fotos:[]  // {blob, url}
 };
+function mLabel(m){return baueMitarbeiter(m.pnr,m.nachname,m.vorname);}
 
 /* ============================================================
    Navigation
@@ -693,7 +707,7 @@ function wechsleView(name){
   if(name==='uebersicht')renderListe();
   if(name==='personen')renderPersonen();
   // Frisches (noch leeres) Erfassen-Formular übernimmt die aktuelle Vorbelegung
-  if(name==='erfassen' && !$('#fName').value && !$('#fSpind').value){
+  if(name==='erfassen' && !$('#fPnr').value && !$('#fNachname').value && !$('#fSpind').value){
     $('#fDatum').value=heuteISO(); $('#fZeit').value=jetztHM();
     formVorbelegen();
   }
@@ -717,8 +731,42 @@ setInterval(()=>{ const v=aktiveView(); if(speicherModus==='supabase' && (v==='u
 /* ============================================================
    Stammdaten
    ============================================================ */
+async function ladeMitarbeiter(){
+  let m=await getSetting('mitarbeiter',null);
+  if(m===null){
+    // Migration alter Namensliste (reine Strings) -> {pnr,nachname,vorname}
+    const alt=await getSetting('namen',null);
+    m=(Array.isArray(alt)&&alt.length)?alt.map(s=>({pnr:'',nachname:String(s),vorname:''})):[];
+  }
+  return (m||[]).map(x=> typeof x==='string'
+    ? {pnr:'',nachname:x,vorname:''}
+    : {pnr:(x.pnr||'').toString().trim(),nachname:(x.nachname||'').trim(),vorname:(x.vorname||'').trim()});
+}
+function dedupeMitarbeiter(list){
+  const seen=new Set(), out=[];
+  for(const m of list){ const k=mLabel(m); if(k && !seen.has(k)){seen.add(k);out.push(m);} }
+  return out;
+}
+function mitarbeiterZuText(list){
+  return list.map(m=>{
+    const parts=[m.pnr||'',m.nachname||'',m.vorname||''];
+    while(parts.length && parts[parts.length-1]==='') parts.pop();
+    return parts.join('; ');
+  }).join('\n');
+}
+function textZuMitarbeiter(text){
+  const out=[];
+  for(let line of text.split(/\r?\n/)){
+    line=line.trim(); if(!line) continue;
+    const cols=(/[;\t]/.test(line)?line.split(/[;\t]/):line.split(/\s+/)).map(c=>c.trim());
+    if(istKopfzeile(cols[0],cols[1])) continue;
+    const m={pnr:(cols[0]||'').trim(),nachname:(cols[1]||'').trim(),vorname:cols.slice(2).join(' ').trim()};
+    if(m.pnr||m.nachname||m.vorname) out.push(m);
+  }
+  return dedupeMitarbeiter(out);
+}
 async function ladeStammdaten(){
-  state.namen=await getSetting('namen',[]);
+  state.mitarbeiter=await ladeMitarbeiter();
   state.spindeGesamt=await getSetting('spindeGesamt',150);
   // Prüfer: beim ersten Start mit Iris Falatik vorbelegen
   state.pruefer=await getSetting('pruefer',null);
@@ -739,14 +787,14 @@ async function ladeStammdaten(){
     await setSetting('standardPruefer',state.standardPruefer);
   }
   state.standardZeugen=await getSetting('standardZeugen',[]);
-  $('#sNamen').value=state.namen.join('\n');
+  $('#sNamen').value=mitarbeiterZuText(state.mitarbeiter);
   $('#sPruefer').value=state.pruefer.join('\n');
   $('#sZeugen').value=state.zeugen.join('\n');
   $('#sStdPruefer').value=state.standardPruefer;
   $('#sSpindeGesamt').value=state.spindeGesamt;
   fuelleDatalists();
   renderStdZeugenAuswahl();
-  $('#keinSetupHinweis').style.display=state.namen.length?'none':'block';
+  $('#keinSetupHinweis').style.display=state.mitarbeiter.length?'none':'block';
 }
 
 /* ---- Chips (Mehrfach-Auswahl) ---- */
@@ -776,18 +824,21 @@ function zeugenText(e){
 function parseZeilen(text){return text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean)
   .filter((v,i,a)=>a.indexOf(v)===i);}
 function fuelleDatalists(){
-  $('#namensliste').innerHTML=state.namen.map(n=>`<option value="${escapeHtml(n)}">`).join('');
+  $('#pnrliste').innerHTML=state.mitarbeiter.filter(m=>m.pnr)
+    .map(m=>`<option value="${escapeHtml(m.pnr)}">${escapeHtml(m.pnr+' – '+[m.nachname,m.vorname].filter(Boolean).join(' '))}</option>`).join('');
+  $('#nachnameliste').innerHTML=[...new Set(state.mitarbeiter.map(m=>m.nachname).filter(Boolean))]
+    .map(v=>`<option value="${escapeHtml(v)}">`).join('');
   $('#prueferliste').innerHTML=state.pruefer.map(n=>`<option value="${escapeHtml(n)}">`).join('');
 }
 $('#btnNamenSpeichern').onclick=async()=>{
-  state.namen=parseZeilen($('#sNamen').value);
-  state.spindeGesamt=parseInt($('#sSpindeGesamt').value,10)||state.namen.length||150;
-  await setSetting('namen',state.namen);
+  state.mitarbeiter=textZuMitarbeiter($('#sNamen').value);
+  state.spindeGesamt=parseInt($('#sSpindeGesamt').value,10)||state.mitarbeiter.length||150;
+  await setSetting('mitarbeiter',state.mitarbeiter);
   await setSetting('spindeGesamt',state.spindeGesamt);
   fuelleDatalists();
-  $('#keinSetupHinweis').style.display=state.namen.length?'none':'block';
-  $('#namenStatus').textContent=`${state.namen.length} Namen gespeichert`;
-  toast(`${state.namen.length} Mitarbeiter gespeichert`);
+  $('#keinSetupHinweis').style.display=state.mitarbeiter.length?'none':'block';
+  $('#namenStatus').textContent=`${state.mitarbeiter.length} Mitarbeiter gespeichert`;
+  toast(`${state.mitarbeiter.length} Mitarbeiter gespeichert`);
 };
 /* ---- Namensliste-Upload: Excel (.xlsx) + CSV/TXT ---- */
 function decodeXml(s){
@@ -812,8 +863,8 @@ function parseCSVText(text){
     line=line.trim(); if(!line) continue;
     const cols=line.split(/[;,\t]/).map(c=>c.trim().replace(/^"(.*)"$/,'$1').trim());
     if(istKopfzeile(cols[0],cols[1])) continue;
-    const m=baueMitarbeiter(cols[0],cols[1],cols[2]);
-    if(m) out.push(m);
+    const m={pnr:(cols[0]||'').trim(),nachname:(cols[1]||'').trim(),vorname:(cols[2]||'').trim()};
+    if(m.pnr||m.nachname||m.vorname) out.push(m);
   }
   return out;
 }
@@ -888,30 +939,29 @@ async function readXlsxNames(file){
   Object.keys(rows).sort((a,b)=>(+a)-(+b)).forEach(rn=>{
     const z=rows[rn];
     if(istKopfzeile(z.A,z.B)) return;
-    const m=baueMitarbeiter(z.A,z.B,z.C);
-    if(m) namen.push(m);
+    const m={pnr:(z.A||'').trim(),nachname:(z.B||'').trim(),vorname:(z.C||'').trim()};
+    if(m.pnr||m.nachname||m.vorname) namen.push(m);
   });
   return namen;
 }
 $('#namenUpload').onchange=async(e)=>{
   const file=e.target.files[0]; e.target.value=''; if(!file) return;
   try{
-    let namen = file.name.toLowerCase().endsWith('.xlsx')
+    let liste = file.name.toLowerCase().endsWith('.xlsx')
       ? await readXlsxNames(file)
       : parseCSVText(await file.text());
-    // Duplikate entfernen (Kopfzeilen erledigt bereits der Parser)
-    namen=namen.map(s=>s.trim()).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
-    if(!namen.length){ toast('Keine Einträge in der Datei gefunden'); return; }
-    $('#sNamen').value=namen.join('\n');
-    state.namen=namen;
-    if(!$('#sSpindeGesamt').value) $('#sSpindeGesamt').value=Math.max(namen.length,150);
-    state.spindeGesamt=parseInt($('#sSpindeGesamt').value,10)||namen.length;
-    await setSetting('namen',state.namen);
+    liste=dedupeMitarbeiter(liste);
+    if(!liste.length){ toast('Keine Einträge in der Datei gefunden'); return; }
+    state.mitarbeiter=liste;
+    $('#sNamen').value=mitarbeiterZuText(liste);
+    if(!$('#sSpindeGesamt').value) $('#sSpindeGesamt').value=Math.max(liste.length,150);
+    state.spindeGesamt=parseInt($('#sSpindeGesamt').value,10)||liste.length;
+    await setSetting('mitarbeiter',state.mitarbeiter);
     await setSetting('spindeGesamt',state.spindeGesamt);
     fuelleDatalists();
     $('#keinSetupHinweis').style.display='none';
-    $('#namenStatus').textContent=`${namen.length} Namen importiert`;
-    toast(`${namen.length} Namen aus „${file.name}" importiert ✓`);
+    $('#namenStatus').textContent=`${liste.length} Mitarbeiter importiert`;
+    toast(`${liste.length} Mitarbeiter aus „${file.name}" importiert ✓`);
   }catch(err){ console.error(err); alert('Import fehlgeschlagen: '+err.message); }
 };
 
@@ -993,6 +1043,19 @@ function formVorbelegen(){
   renderZeugenAuswahl();
   setChecked($('#zeugenAuswahl'),state.standardZeugen);
 }
+/* Personalnummer eingeben -> Nachname/Vorname automatisch füllen (und umgekehrt) */
+$('#fPnr').oninput=()=>{
+  const v=$('#fPnr').value.trim();
+  const m=state.mitarbeiter.find(x=>String(x.pnr)===v);
+  if(m){ $('#fNachname').value=m.nachname||''; $('#fVorname').value=m.vorname||''; }
+};
+$('#fNachname').oninput=()=>{
+  const v=$('#fNachname').value.trim().toLowerCase(); if(!v) return;
+  const ms=state.mitarbeiter.filter(x=>(x.nachname||'').toLowerCase()===v);
+  if(ms.length===1){ const m=ms[0];
+    if(!$('#fPnr').value) $('#fPnr').value=m.pnr||'';
+    if(!$('#fVorname').value) $('#fVorname').value=m.vorname||''; }
+};
 function resetFormular(){
   $('#formErfassen').reset();
   $('#fDatum').value=heuteISO();
@@ -1037,10 +1100,13 @@ function renderFotoVorschau(){
 
 $('#formErfassen').onsubmit=async(e)=>{
   e.preventDefault();
-  const name=$('#fName').value.trim();
+  const pnr=$('#fPnr').value.trim();
+  const nachname=$('#fNachname').value.trim();
+  const vorname=$('#fVorname').value.trim();
   const spind=$('#fSpind').value.trim();
   const pruefer=$('#fPruefer').value.trim();
-  if(!name||!spind||!pruefer){toast('Bitte Pflichtfelder ausfüllen');return;}
+  if(!pnr||!nachname||!spind||!pruefer){toast('Bitte Pflichtfelder ausfüllen (Personalnr., Nachname, Spind, Prüfer/in)');return;}
+  const name=baueMitarbeiter(pnr,nachname,vorname);
 
   // Prüfer ggf. zur Liste lernen
   if(pruefer && !state.pruefer.includes(pruefer)){
@@ -1056,7 +1122,7 @@ $('#formErfassen').onsubmit=async(e)=>{
 
   const eintrag={
     id:(crypto.randomUUID?crypto.randomUUID():'id-'+Date.now()+'-'+Math.round(performance.now())),
-    name, spind, pruefer,
+    name, pnr, nachname, vorname, spind, pruefer,
     zeugen,
     datum:$('#fDatum').value, zeit:$('#fZeit').value,
     ergebnis:state.ergebnis,
@@ -1145,16 +1211,23 @@ async function renderPersonen(){
   let alle;
   try{ alle=await getAllInspections(); }
   catch(err){ console.warn('Personen konnten nicht geladen werden (offline?):',err); return; }
-  const stats={};
-  for(const e of alle){
-    const n=(e.name||'').trim(); if(!n)continue;
-    if(!stats[n])stats[n]={count:0,last:null};
-    stats[n].count++;
-    if(!stats[n].last || (e.erstellt||0)>(stats[n].last.erstellt||0)) stats[n].last=e;
+  const byKey={};
+  // Roster aus den Stammdaten (auch nie kontrollierte anzeigen)
+  for(const m of state.mitarbeiter){
+    const k=mLabel(m); if(!k) continue;
+    byKey[k]={name:k,pnr:m.pnr||'',nachname:m.nachname||'',vorname:m.vorname||'',count:0,last:null};
   }
-  const set=new Set(state.namen.map(s=>s.trim()).filter(Boolean));
-  Object.keys(stats).forEach(n=>set.add(n));
-  let personen=[...set].map(n=>({name:n,count:stats[n]?stats[n].count:0,last:stats[n]?stats[n].last:null}));
+  // Kontrollen dazurechnen
+  for(const e of alle){
+    const k=(e.name||'').trim(); if(!k) continue;
+    if(!byKey[k]){
+      const strukturiert=!!(e.pnr||e.nachname||e.vorname);
+      byKey[k]={name:k,pnr:e.pnr||'',nachname:e.nachname||(strukturiert?'':k),vorname:e.vorname||'',count:0,last:null};
+    }
+    byKey[k].count++;
+    if(!byKey[k].last || (e.erstellt||0)>(byKey[k].last.erstellt||0)) byKey[k].last=e;
+  }
+  let personen=Object.values(byKey);
   personen.sort((a,b)=>{
     const la=a.last?a.last.erstellt:-1, lb=b.last?b.last.erstellt:-1;
     if(la===-1&&lb===-1)return a.name.localeCompare(b.name);
@@ -1164,8 +1237,8 @@ async function renderPersonen(){
   const such=$('#personSuche').value.trim().toLowerCase();
   if(such)personen=personen.filter(p=>p.name.toLowerCase().includes(such));
   const c=$('#personListe');
-  if(!set.size){
-    c.innerHTML='<div class="leer">Noch keine Mitarbeiter. Bitte unter <b>Stammdaten</b> die Namensliste hinterlegen.</div>';
+  if(!Object.keys(byKey).length){
+    c.innerHTML='<div class="leer">Noch keine Mitarbeiter. Bitte unter <b>Stammdaten</b> die Mitarbeiterliste hinterlegen.</div>';
     return;
   }
   if(!personen.length){c.innerHTML='<div class="leer">Keine Treffer.</div>';return;}
@@ -1176,8 +1249,9 @@ async function renderPersonen(){
       :(p.last.ergebnis==='auffaellig'?'<span class="pille warn">⚠ Auffällig</span>':'<span class="pille ok">✓ Unauffällig</span>');
     const meta=nie?'Noch nie kontrolliert'
       :`Zuletzt: ${fmtDatum(p.last.datum)} · ${relZeit(p.last.erstellt||0)} · ${p.count}×`;
-    const init=escapeHtml(p.name.split(/\s+/).map(w=>w[0]||'').join('').slice(0,2).toUpperCase()||'?');
-    return `<div class="eintrag" data-name="${escapeHtml(p.name)}">
+    const initSrc=[p.nachname,p.vorname].filter(Boolean).join(' ')||p.name;
+    const init=escapeHtml(initSrc.split(/\s+/).map(w=>w[0]||'').join('').slice(0,2).toUpperCase()||'?');
+    return `<div class="eintrag" data-pnr="${escapeHtml(p.pnr)}" data-nachname="${escapeHtml(p.nachname)}" data-vorname="${escapeHtml(p.vorname)}">
       <div class="thumb">${init}</div>
       <div class="info">
         <div class="name">${escapeHtml(p.name)}</div>
@@ -1187,11 +1261,12 @@ async function renderPersonen(){
     </div>`;
   }).join('');
   $$('.eintrag',c).forEach(el=>el.onclick=()=>{
-    const name=el.dataset.name;
     wechsleView('erfassen');
-    $('#fName').value=name;
+    $('#fPnr').value=el.dataset.pnr||'';
+    $('#fNachname').value=el.dataset.nachname||'';
+    $('#fVorname').value=el.dataset.vorname||'';
     $('#fSpind').focus();
-    toast('Neue Kontrolle für '+name);
+    toast('Neue Kontrolle für '+(el.dataset.nachname||el.dataset.pnr||'Person'));
   });
 }
 $('#personSuche').oninput=renderPersonen;
@@ -1226,7 +1301,8 @@ async function zeigeDetail(id){
   $('#detailModal').innerHTML=`
     <div class="kopf"><h3>Spind ${escapeHtml(e.spind)} ${pille}</h3>
       <button class="schliessen" id="mClose">×</button></div>
-    <div class="detail-zeile"><b>Mitarbeiter/in</b><span>${escapeHtml(e.name)}</span></div>
+    ${e.pnr?`<div class="detail-zeile"><b>Personalnummer</b><span>${escapeHtml(e.pnr)}</span></div>`:''}
+    <div class="detail-zeile"><b>Mitarbeiter/in</b><span>${escapeHtml((e.nachname||e.vorname)?[e.nachname,e.vorname].filter(Boolean).join(' '):e.name)}</span></div>
     <div class="detail-zeile"><b>Datum / Uhrzeit</b><span>${fmtDatum(e.datum)} ${escapeHtml(e.zeit||'')}</span></div>
     <div class="detail-zeile"><b>Prüfer/in</b><span>${escapeHtml(e.pruefer||'–')}</span></div>
     <div class="detail-zeile"><b>Zeuge(n)</b><span>${escapeHtml(zeugenText(e)||'–')}</span></div>
@@ -1342,9 +1418,12 @@ async function csvExport(){
   const alle=await getAllInspections();
   if(!alle.length){toast('Keine Daten für CSV');return;}
   const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
-  const kopf=['Name','Spindnummer','Datum','Uhrzeit','Pruefer','Zeugen','Ergebnis','Bemerkung','Anzahl Fotos'];
-  const zeilen=alle.map(e=>[e.name,e.spind,fmtDatum(e.datum),e.zeit,e.pruefer,zeugenText(e),
-    e.ergebnis==='auffaellig'?'Auffällig':'Unauffällig',e.bemerkung,(e.fotos||[]).length].map(q).join(';'));
+  const kopf=['Personalnummer','Nachname','Vorname','Spindnummer','Datum','Uhrzeit','Pruefer','Zeugen','Ergebnis','Bemerkung','Anzahl Fotos'];
+  const zeilen=alle.map(e=>{
+    const nach=e.nachname||((e.pnr||e.vorname)?'':e.name)||'';   // alte Einträge: Name als Nachname
+    return [e.pnr||'',nach,e.vorname||'',e.spind,fmtDatum(e.datum),e.zeit,e.pruefer,zeugenText(e),
+      e.ergebnis==='auffaellig'?'Auffällig':'Unauffällig',e.bemerkung,fotoAnzahl(e)].map(q).join(';');
+  });
   const csv='﻿'+[kopf.map(q).join(';'),...zeilen].join('\r\n');
   const d=new Date();
   downloadDatei(csv,`spindkontrolle_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.csv`,'text/csv;charset=utf-8');
