@@ -55,6 +55,8 @@
   header.app .titel .sub{font-size:12.5px;opacity:.85;font-weight:500}
   header.app .badge{margin-left:auto;font-size:12px;background:rgba(255,255,255,.15);
     padding:5px 10px;border-radius:20px;white-space:nowrap}
+  #cloudBadge.sync-on{background:rgba(255,255,255,.28)}
+  #cloudBadge.sync-off{background:var(--rot);color:#fff}
 
   /* ---------- Navigation ---------- */
   nav.tabs{
@@ -207,7 +209,8 @@
 <header class="app">
   <span class="logo" id="logoSlot"></span>
   <span class="titel"><span class="marke">dreiturm</span><span class="sub">Spindkontrolle · Protokoll</span></span>
-  <span class="badge" id="kopfBadge">0 Kontrollen</span>
+  <span class="badge" id="cloudBadge" style="display:none;margin-left:auto"></span>
+  <span class="badge" id="kopfBadge" style="margin-left:8px">0 Kontrollen</span>
 </header>
 
 <nav class="tabs">
@@ -305,6 +308,10 @@
       <div class="hinweis" id="fortDetail"></div>
     </div>
 
+    <div class="btn-reihe" style="margin-bottom:12px">
+      <button class="btn geist" id="btnRefresh">↻ Aktualisieren</button>
+    </div>
+
     <div class="filterzeile">
       <input type="text" id="filterSuche" placeholder="🔍 Name / Spind suchen">
       <select id="filterErgebnis">
@@ -322,7 +329,6 @@
     </div>
     <p class="hinweis" style="margin-top:8px">„Mit Fotos" verkleinert die Bilder automatisch, damit die PDF-Datei auch bei vielen Spinden klein bleibt. „Ohne Fotos" erzeugt ein sehr kleines Text-Protokoll.</p>
     <div class="btn-reihe" style="margin-top:12px">
-      <button class="btn geist" id="btnJsonExport">⬇ Backup (JSON)</button>
       <button class="btn geist" id="btnCsv">⬇ CSV</button>
     </div>
   </section>
@@ -414,15 +420,9 @@
     </div>
 
     <div class="karte">
-      <h2 class="abschnitt" style="margin-top:0">Daten &amp; Backup</h2>
-      <p class="hinweis" style="margin-top:0">Alle Daten liegen ausschließlich lokal in diesem Browser/Gerät. Zur Sicherung regelmäßig ein JSON-Backup exportieren.</p>
+      <h2 class="abschnitt" style="margin-top:0">Daten</h2>
+      <p class="hinweis" style="margin-top:0">Bei aktivem Cloud-Sync werden die Daten geräteübergreifend gespeichert und geteilt.</p>
       <div class="btn-reihe">
-        <button class="btn sekundaer" id="btnJsonExport2">⬇ Backup exportieren</button>
-        <button class="btn geist foto-btn">⬆ Backup importieren
-          <input type="file" accept="application/json,.json" id="jsonImport" style="position:absolute;inset:0;opacity:0;cursor:pointer">
-        </button>
-      </div>
-      <div class="btn-reihe" style="margin-top:10px">
         <button class="btn gefahr" id="btnAllesLoeschen">🗑 Alle Kontrollen löschen</button>
       </div>
     </div>
@@ -509,6 +509,21 @@ const mem={settings:new Map(),inspections:new Map()};
 
 /* ---- Cloud-Sync (Supabase) ---- */
 let SUPA=null; // {url,key}
+let cloudOnline=false, initFertig=false;
+function setCloudBadge(){
+  const el=document.getElementById('cloudBadge'); if(!el) return;
+  if(speicherModus!=='supabase'){ el.style.display='none'; return; }
+  el.style.display='inline-block';
+  el.textContent=cloudOnline?'☁ Sync':'⚠ Offline';
+  el.className='badge '+(cloudOnline?'sync-on':'sync-off');
+}
+function setCloudOnline(v){
+  const war=cloudOnline; cloudOnline=v; setCloudBadge();
+  if(v && !war && initFertig && speicherModus==='supabase'){
+    // gerade wieder verbunden -> Stammdaten + aktuelle Ansicht frisch laden
+    ladeStammdaten().then(()=>{aktualisiereBadge();aktualisiereAnsicht();}).catch(()=>{});
+  }
+}
 function b64urlDecode(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return decodeURIComponent(escape(atob(s)));}
 function b64urlEncode(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 /* Fest eingebaute Standard-Cloud: der nackte Link verbindet sich überall sofort.
@@ -537,9 +552,13 @@ function cfgLink(){
   return location.origin+location.pathname+'#cfg='+b64urlEncode(JSON.stringify({url:SUPA.url,key:SUPA.key}));
 }
 async function supaFetch(path,opts={}){
-  const r=await fetch(SUPA.url+'/rest/v1/'+path,{...opts,headers:{
-    apikey:SUPA.key,Authorization:'Bearer '+SUPA.key,'Content-Type':'application/json',...(opts.headers||{})}});
-  if(!r.ok){const t=await r.text();throw new Error('Cloud '+r.status+': '+t.slice(0,140));}
+  let r;
+  try{
+    r=await fetch(SUPA.url+'/rest/v1/'+path,{...opts,headers:{
+      apikey:SUPA.key,Authorization:'Bearer '+SUPA.key,'Content-Type':'application/json',...(opts.headers||{})}});
+  }catch(err){ setCloudOnline(false); throw err; }
+  if(!r.ok){const t=await r.text();setCloudOnline(!(r.status>=500||r.status===0));throw new Error('Cloud '+r.status+': '+t.slice(0,140));}
+  setCloudOnline(true);
   const t=await r.text(); return t?JSON.parse(t):null;
 }
 const enc=encodeURIComponent;
@@ -658,6 +677,20 @@ function wechsleView(name){
   }
   window.scrollTo(0,0);
 }
+
+/* ---- Live-Aktualisierung (für gemeinsamen Datenstand) ---- */
+function aktiveView(){const v=document.querySelector('.view.aktiv');return v?v.id.replace('view-',''):'';}
+async function aktualisiereAnsicht(){
+  const v=aktiveView();
+  if(v==='uebersicht') await renderListe();
+  else if(v==='personen') await renderPersonen();
+  await aktualisiereBadge();
+}
+// beim Zurückkehren in die App / bei Fokus sofort neu laden
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && speicherModus==='supabase') aktualisiereAnsicht(); });
+window.addEventListener('focus',()=>{ if(speicherModus==='supabase') aktualisiereAnsicht(); });
+// regelmäßig aktualisieren, solange Liste/Personen offen und Cloud aktiv
+setInterval(()=>{ const v=aktiveView(); if(speicherModus==='supabase' && (v==='uebersicht'||v==='personen')) aktualisiereAnsicht(); }, 15000);
 
 /* ============================================================
    Stammdaten
@@ -875,6 +908,7 @@ function renderCloudUI(){
     ? '✓ <b>Verbunden.</b> Daten werden zwischen allen verbundenen Geräten geteilt.'
     : 'Aktuell <b>nur auf diesem Gerät</b>. Zum Teilen zwischen Handy und Rechner hier verbinden.';
   if(an && $('#cfgUrl')) $('#cfgUrl').value=SUPA.url;
+  setCloudBadge();
 }
 $('#btnCloudConnect').onclick=async()=>{
   const url=$('#cfgUrl').value.trim().replace(/\/+$/,'');
@@ -986,7 +1020,13 @@ $('#formErfassen').onsubmit=async(e)=>{
     fotos,
     erstellt:Date.now()
   };
-  await addInspection(eintrag);
+  try{
+    await addInspection(eintrag);
+  }catch(err){
+    console.error('Speichern fehlgeschlagen:',err);
+    alert('Keine Verbindung zur Cloud – die Kontrolle wurde NICHT gespeichert.\nBitte prüfen, ob „☁ Sync" oben angezeigt wird, und erneut speichern, sobald wieder online.');
+    return;
+  }
   toast('Kontrolle gespeichert ✓');
   resetFormular();
   await aktualisiereBadge();
@@ -998,7 +1038,8 @@ $('#formErfassen').onsubmit=async(e)=>{
    ============================================================ */
 let cacheEintraege=[];
 async function renderListe(){
-  cacheEintraege=await getAllInspections();
+  try{ cacheEintraege=await getAllInspections(); }
+  catch(err){ console.warn('Liste konnte nicht geladen werden (offline?):',err); return; }
   await aktualisiereFortschritt();
   const such=$('#filterSuche').value.trim().toLowerCase();
   const erg=$('#filterErgebnis').value;
@@ -1032,6 +1073,7 @@ async function renderListe(){
 }
 $('#filterSuche').oninput=renderListe;
 $('#filterErgebnis').onchange=renderListe;
+$('#btnRefresh').onclick=async()=>{ await aktualisiereAnsicht(); toast('Aktualisiert'); };
 
 /* ============================================================
    Mitarbeiter-Ansicht: zuletzt kontrolliert
@@ -1047,7 +1089,9 @@ function relZeit(ms){
   return 'vor '+Math.round(tage/30)+' Monaten';
 }
 async function renderPersonen(){
-  const alle=await getAllInspections();
+  let alle;
+  try{ alle=await getAllInspections(); }
+  catch(err){ console.warn('Personen konnten nicht geladen werden (offline?):',err); return; }
   const stats={};
   for(const e of alle){
     const n=(e.name||'').trim(); if(!n)continue;
@@ -1156,7 +1200,7 @@ async function zeigeDetail(id){
    Badge
    ============================================================ */
 async function aktualisiereBadge(){
-  const n=(await getAllInspections()).length;
+  let n; try{ n=(await getAllInspections()).length; }catch(err){ return; }
   $('#kopfBadge').textContent=n===1?'1 Kontrolle':`${n} Kontrollen`;
 }
 
@@ -1241,20 +1285,6 @@ function downloadDatei(inhalt,dateiname,typ){
   a.href=url;a.download=dateiname;document.body.appendChild(a);a.click();
   a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-async function jsonExport(){
-  const daten={
-    typ:'dreiturm-spindkontrolle', version:1, exportiert:new Date().toISOString(),
-    settings:{namen:state.namen,pruefer:state.pruefer,zeugen:state.zeugen,spindeGesamt:state.spindeGesamt,
-      standardPruefer:state.standardPruefer,standardZeugen:state.standardZeugen},
-    inspections:await getAllInspections(true)
-  };
-  const d=new Date();
-  downloadDatei(JSON.stringify(daten),`spindkontrolle_backup_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.json`,'application/json');
-  toast('Backup exportiert');
-}
-$('#btnJsonExport').onclick=jsonExport;
-$('#btnJsonExport2').onclick=jsonExport;
-
 async function csvExport(){
   const alle=await getAllInspections();
   if(!alle.length){toast('Keine Daten für CSV');return;}
@@ -1268,33 +1298,6 @@ async function csvExport(){
   toast('CSV exportiert');
 }
 $('#btnCsv').onclick=csvExport;
-
-/* JSON Import */
-$('#jsonImport').onchange=async(e)=>{
-  const file=e.target.files[0];e.target.value='';if(!file)return;
-  try{
-    const daten=JSON.parse(await file.text());
-    if(daten.typ!=='dreiturm-spindkontrolle')throw new Error('Falsches Dateiformat');
-    if(!confirm('Backup importieren? Vorhandene Kontrollen mit gleicher ID werden überschrieben, neue hinzugefügt.'))return;
-    if(daten.settings){
-      const s=daten.settings;
-      state.namen=s.namen||[];state.pruefer=s.pruefer||[];
-      state.zeugen=s.zeugen||state.zeugen;
-      state.spindeGesamt=s.spindeGesamt||150;
-      state.standardPruefer=s.standardPruefer||'';
-      state.standardZeugen=s.standardZeugen||[];
-      await setSetting('namen',state.namen);await setSetting('pruefer',state.pruefer);
-      await setSetting('zeugen',state.zeugen);
-      await setSetting('spindeGesamt',state.spindeGesamt);
-      await setSetting('standardPruefer',state.standardPruefer);
-      await setSetting('standardZeugen',state.standardZeugen);
-    }
-    for(const ins of (daten.inspections||[]))await addInspection(ins);
-    await ladeStammdaten();await aktualisiereBadge();
-    toast(`${(daten.inspections||[]).length} Kontrollen importiert`);
-    wechsleView('uebersicht');
-  }catch(err){console.error(err);alert('Import fehlgeschlagen: '+err.message);}
-};
 
 /* Alles löschen */
 $('#btnAllesLoeschen').onclick=async()=>{
@@ -1317,24 +1320,24 @@ $('#btnAllesLoeschen').onclick=async()=>{
   // Cloud-Konfiguration (Einladungslink oder gespeichert)
   ladeSupaConfig();
   if(SUPA){
+    // Bei konfigurierter Cloud im Cloud-Modus BLEIBEN (kein stiller Lokal-Fallback,
+    // sonst würden Eingaben nicht geteilt). Bei Problemen: Status "Offline".
     speicherModus='supabase';
     try{ await supaFetch('spk_settings?select=key&limit=1'); }
-    catch(err){
-      console.error('Cloud nicht erreichbar:',err);
-      toast('Cloud nicht erreichbar – lokaler Modus aktiv');
-      speicherModus=lokalerModus(); SUPA=null;
-    }
+    catch(err){ console.warn('Cloud beim Start nicht erreichbar:',err); setCloudOnline(false); }
   }
-  try{
-    await ladeStammdaten();
-    resetFormular();
-    await aktualisiereBadge();
-    renderCloudUI();
-  }catch(err){
-    console.error('Init-Fehler:',err);
-    toast('Hinweis: '+err.message);
-  }
+  try{ await ladeStammdaten(); }
+  catch(err){ console.warn('Stammdaten konnten nicht geladen werden (offline?):',err); }
+  resetFormular();
+  try{ await aktualisiereBadge(); }catch(e){}
+  renderCloudUI(); setCloudBadge();
+  initFertig=true;
 })();
+
+// Wenn das Gerät wieder online geht: Cloud anstoßen (Status + Nachladen via setCloudOnline)
+window.addEventListener('online',async()=>{
+  if(speicherModus==='supabase'){ try{ await supaFetch('spk_settings?select=key&limit=1'); }catch(e){} }
+});
 
 /* Service Worker für Android-Installation + Offline (nur wenn per https gehostet) */
 if('serviceWorker' in navigator && window.isSecureContext){
