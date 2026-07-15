@@ -1305,6 +1305,7 @@ async function renderPersonen(){
     return;
   }
   if(!personen.length){c.innerHTML='<div class="leer">Keine Treffer.</div>';return;}
+  const rosterKeys=new Set(state.mitarbeiter.map(mLabel));   // wer aus der hochgeladenen Liste stammt
   c.innerHTML=personen.map(p=>{
     const nie=!p.last;
     const pille=nie
@@ -1314,6 +1315,8 @@ async function renderPersonen(){
       :`Zuletzt: ${fmtDatum(p.last.datum)} · ${relZeit(p.last.erstellt||0)} · ${p.count}×`;
     const initSrc=[p.nachname,p.vorname].filter(Boolean).join(' ')||p.name;
     const init=escapeHtml(initSrc.split(/\s+/).map(w=>w[0]||'').join('').slice(0,2).toUpperCase()||'?');
+    const delBtn=rosterKeys.has(p.name)
+      ? `<button class="eintrag-del" data-key="${escapeHtml(p.name)}" title="Mitarbeiter aus Liste entfernen" aria-label="Entfernen">🗑</button>` : '';
     return `<div class="eintrag" data-pnr="${escapeHtml(p.pnr)}" data-nachname="${escapeHtml(p.nachname)}" data-vorname="${escapeHtml(p.vorname)}">
       <div class="thumb">${init}</div>
       <div class="info">
@@ -1321,6 +1324,7 @@ async function renderPersonen(){
         <div class="meta">${meta}</div>
       </div>
       ${pille}
+      ${delBtn}
     </div>`;
   }).join('');
   $$('.eintrag',c).forEach(el=>el.onclick=()=>{
@@ -1330,6 +1334,20 @@ async function renderPersonen(){
     $('#fVorname').value=el.dataset.vorname||'';
     $('#fSpind').focus();
     toast('Neue Kontrolle für '+(el.dataset.nachname||el.dataset.pnr||'Person'));
+  });
+  // Person aus der hochgeladenen Liste entfernen (Kontrollen bleiben erhalten)
+  $$('.eintrag-del',c).forEach(btn=>btn.onclick=async(ev)=>{
+    ev.stopPropagation();
+    const key=btn.dataset.key;
+    const hatKontrollen=!!(byKey[key] && byKey[key].count>0);
+    if(!confirm('Diesen Mitarbeiter aus der Liste entfernen?\n\n'+key+
+        (hatKontrollen?'\n\nDie bereits erfassten Kontrollen bleiben erhalten.':''))) return;
+    state.mitarbeiter=state.mitarbeiter.filter(m=>mLabel(m)!==key);
+    try{ await setSetting('mitarbeiter',state.mitarbeiter); }
+    catch(err){ alert('Entfernen fehlgeschlagen (Verbindung?). Bitte erneut versuchen.'); return; }
+    $('#sNamen').value=mitarbeiterZuText(state.mitarbeiter);
+    fuelleDatalists(); renderMitarbeiterListe(); renderPersonen();
+    toast('Mitarbeiter aus Liste entfernt');
   });
 }
 $('#personSuche').oninput=renderPersonen;
