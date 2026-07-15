@@ -1418,7 +1418,7 @@ async function csvExport(){
   const alle=await getAllInspections();
   if(!alle.length){toast('Keine Daten für CSV');return;}
   const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
-  const kopf=['Personalnummer','Nachname','Vorname','Spindnummer','Datum','Uhrzeit','Pruefer','Zeugen','Ergebnis','Bemerkung','Anzahl Fotos'];
+  const kopf=['Personalnummer','Nachname','Vorname','Spindnummer','Datum','Uhrzeit','Prüfer','Zeugen','Ergebnis','Bemerkung','Anzahl Fotos'];
   const zeilen=alle.map(e=>{
     const nach=e.nachname||((e.pnr||e.vorname)?'':e.name)||'';   // alte Einträge: Name als Nachname
     return [e.pnr||'',nach,e.vorname||'',e.spind,fmtDatum(e.datum),e.zeit,e.pruefer,zeugenText(e),
