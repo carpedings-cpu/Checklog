@@ -904,6 +904,19 @@ function istKopfzeile(a,b){
 function baueMitarbeiter(pnr,nachname,vorname){
   return [pnr,nachname,vorname].map(s=>(s||'').trim()).filter(Boolean).join(' ');
 }
+/* Text-Datei mit automatischer Kodierungs-Erkennung lesen, damit Umlaute IMMER
+   korrekt ankommen (UTF-8 mit/ohne BOM, UTF-16, sonst Windows-1252/ANSI). */
+async function readTextSmart(file){
+  const buf=new Uint8Array(await file.arrayBuffer());
+  if(buf.length>=3 && buf[0]===0xEF&&buf[1]===0xBB&&buf[2]===0xBF)
+    return new TextDecoder('utf-8').decode(buf.subarray(3));            // UTF-8 mit BOM
+  if(buf.length>=2 && buf[0]===0xFF&&buf[1]===0xFE)
+    return new TextDecoder('utf-16le').decode(buf.subarray(2));         // UTF-16 LE
+  if(buf.length>=2 && buf[0]===0xFE&&buf[1]===0xFF)
+    return new TextDecoder('utf-16be').decode(buf.subarray(2));         // UTF-16 BE
+  try{ return new TextDecoder('utf-8',{fatal:true}).decode(buf); }      // gültiges UTF-8
+  catch(_){ return new TextDecoder('windows-1252').decode(buf); }       // deutsche ANSI-Datei
+}
 function parseCSVText(text){
   const out=[];
   for(let line of text.split(/\r?\n/)){
@@ -996,7 +1009,7 @@ $('#namenUpload').onchange=async(e)=>{
   try{
     let liste = file.name.toLowerCase().endsWith('.xlsx')
       ? await readXlsxNames(file)
-      : parseCSVText(await file.text());
+      : parseCSVText(await readTextSmart(file));
     liste=dedupeMitarbeiter(liste);
     if(!liste.length){ toast('Keine Einträge in der Datei gefunden'); return; }
     state.mitarbeiter=liste;
