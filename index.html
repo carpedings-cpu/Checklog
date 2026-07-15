@@ -545,7 +545,7 @@ function setCloudOnline(v){
   const war=cloudOnline; cloudOnline=v; setCloudBadge();
   if(v && !war && initFertig && speicherModus==='supabase'){
     // gerade wieder verbunden -> Stammdaten + aktuelle Ansicht frisch laden
-    ladeStammdaten().then(()=>{aktualisiereBadge();aktualisiereAnsicht();}).catch(()=>{});
+    ladeStammdaten(true).then(()=>{aktualisiereBadge();aktualisiereAnsicht();}).catch(()=>{});
   }
 }
 
@@ -559,7 +559,7 @@ async function realtimeStart(){
     rtClient = createClient(SUPA.url, SUPA.key, { realtime:{ params:{ eventsPerSecond:5 } } });
     rtChannel = rtClient.channel('spk-live')
       .on('postgres_changes',{event:'*',schema:'public',table:'spk_inspections'},()=>{ setCloudOnline(true); aktualisiereAnsicht(); })
-      .on('postgres_changes',{event:'*',schema:'public',table:'spk_settings'},()=>{ ladeStammdaten().then(()=>{aktualisiereBadge();aktualisiereAnsicht();}).catch(()=>{}); })
+      .on('postgres_changes',{event:'*',schema:'public',table:'spk_settings'},()=>{ ladeStammdaten(true).then(()=>{aktualisiereBadge();aktualisiereAnsicht();}).catch(()=>{}); })
       .subscribe();
   }catch(err){ console.warn('Live-Verbindung nicht verfügbar – nutze Auto-Refresh:',err); rtClient=null; rtChannel=null; }
 }
@@ -774,7 +774,8 @@ function textZuMitarbeiter(text){
   }
   return dedupeMitarbeiter(out);
 }
-async function ladeStammdaten(){
+let stammdatenDirty=false;   // true, sobald in Stammdaten-Feldern getippt und noch nicht gespeichert wurde
+async function ladeStammdaten(background){
   state.mitarbeiter=await ladeMitarbeiter();
   state.spindeGesamt=await getSetting('spindeGesamt',150);
   // Prüfer: beim ersten Start mit Iris Falatik vorbelegen
@@ -796,13 +797,19 @@ async function ladeStammdaten(){
     await setSetting('standardPruefer',state.standardPruefer);
   }
   state.standardZeugen=await getSetting('standardZeugen',[]);
-  $('#sNamen').value=mitarbeiterZuText(state.mitarbeiter);
-  $('#sPruefer').value=state.pruefer.join('\n');
-  $('#sZeugen').value=state.zeugen.join('\n');
-  $('#sStdPruefer').value=state.standardPruefer;
-  $('#sSpindeGesamt').value=state.spindeGesamt;
+  // Eingabefelder NICHT überschreiben, wenn es eine Hintergrund-Aktualisierung ist
+  // und der Nutzer gerade ungespeicherte Änderungen hat (sonst gingen Eingaben verloren).
+  const schreibFelder = !(background && stammdatenDirty);
+  if(schreibFelder){
+    $('#sNamen').value=mitarbeiterZuText(state.mitarbeiter);
+    $('#sPruefer').value=state.pruefer.join('\n');
+    $('#sZeugen').value=state.zeugen.join('\n');
+    $('#sStdPruefer').value=state.standardPruefer;
+    $('#sSpindeGesamt').value=state.spindeGesamt;
+    renderStdZeugenAuswahl();
+    stammdatenDirty=false;
+  }
   fuelleDatalists();
-  renderStdZeugenAuswahl();
   renderMitarbeiterListe();
   $('#keinSetupHinweis').style.display=state.mitarbeiter.length?'none':'block';
 }
@@ -869,11 +876,17 @@ $('#btnNamenSpeichern').onclick=async()=>{
   state.spindeGesamt=parseInt($('#sSpindeGesamt').value,10)||state.mitarbeiter.length||150;
   await setSetting('mitarbeiter',state.mitarbeiter);
   await setSetting('spindeGesamt',state.spindeGesamt);
+  stammdatenDirty=false;
+  $('#sNamen').value=mitarbeiterZuText(state.mitarbeiter);
   fuelleDatalists(); renderMitarbeiterListe();
   $('#keinSetupHinweis').style.display=state.mitarbeiter.length?'none':'block';
   $('#namenStatus').textContent=`${state.mitarbeiter.length} Mitarbeiter gespeichert`;
   toast(`${state.mitarbeiter.length} Mitarbeiter gespeichert`);
 };
+// Ungespeicherte Änderungen in Stammdaten-Feldern merken (schützt vor Überschreiben durch Live-Sync)
+['#sNamen','#sPruefer','#sZeugen','#sStdPruefer','#sSpindeGesamt'].forEach(sel=>{
+  const el=$(sel); if(el) el.addEventListener('input',()=>{stammdatenDirty=true;});
+});
 /* ---- Namensliste-Upload: Excel (.xlsx) + CSV/TXT ---- */
 function decodeXml(s){
   return String(s)
@@ -1002,6 +1015,7 @@ $('#namenUpload').onchange=async(e)=>{
 $('#btnPrueferSpeichern').onclick=async()=>{
   state.pruefer=parseZeilen($('#sPruefer').value);
   await setSetting('pruefer',state.pruefer);
+  stammdatenDirty=false;
   fuelleDatalists();
   toast('Prüfer gespeichert');
 };
@@ -1011,6 +1025,7 @@ $('#btnZeugenSpeichern').onclick=async()=>{
   state.standardZeugen=state.standardZeugen.filter(z=>state.zeugen.includes(z));
   await setSetting('zeugen',state.zeugen);
   await setSetting('standardZeugen',state.standardZeugen);
+  stammdatenDirty=false;
   renderStdZeugenAuswahl();
   toast('Zeugen gespeichert');
 };
@@ -1019,6 +1034,7 @@ $('#btnStdSpeichern').onclick=async()=>{
   state.standardZeugen=getChecked($('#stdZeugenAuswahl'));
   await setSetting('standardPruefer',state.standardPruefer);
   await setSetting('standardZeugen',state.standardZeugen);
+  stammdatenDirty=false;
   toast('Vorbelegung gespeichert');
 };
 
@@ -1508,6 +1524,10 @@ window.addEventListener('online',async()=>{
 
 /* Service Worker für Android-Installation + Offline (nur wenn per https gehostet) */
 if('serviceWorker' in navigator && window.isSecureContext){
+  let swReloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(swReloaded) return; swReloaded=true; location.reload();   // neue Version -> einmal automatisch neu laden
+  });
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
 </script>
