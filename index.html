@@ -524,6 +524,25 @@ function setCloudOnline(v){
     ladeStammdaten().then(()=>{aktualisiereBadge();aktualisiereAnsicht();}).catch(()=>{});
   }
 }
+
+/* ---- Echt-Live: Supabase Realtime (Websocket). Neue/geänderte Einträge
+   erscheinen sofort auf allen Geräten. Fällt bei Bedarf auf Auto-Refresh zurück. ---- */
+let rtClient=null, rtChannel=null;
+async function realtimeStart(){
+  if(rtChannel || speicherModus!=='supabase' || !SUPA) return;
+  try{
+    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    rtClient = createClient(SUPA.url, SUPA.key, { realtime:{ params:{ eventsPerSecond:5 } } });
+    rtChannel = rtClient.channel('spk-live')
+      .on('postgres_changes',{event:'*',schema:'public',table:'spk_inspections'},()=>{ setCloudOnline(true); aktualisiereAnsicht(); })
+      .on('postgres_changes',{event:'*',schema:'public',table:'spk_settings'},()=>{ ladeStammdaten().then(()=>{aktualisiereBadge();aktualisiereAnsicht();}).catch(()=>{}); })
+      .subscribe();
+  }catch(err){ console.warn('Live-Verbindung nicht verfügbar – nutze Auto-Refresh:',err); rtClient=null; rtChannel=null; }
+}
+function realtimeStop(){
+  try{ if(rtClient && rtChannel) rtClient.removeChannel(rtChannel); }catch(e){}
+  rtChannel=null; rtClient=null;
+}
 function b64urlDecode(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return decodeURIComponent(escape(atob(s)));}
 function b64urlEncode(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 /* Fest eingebaute Standard-Cloud: der nackte Link verbindet sich überall sofort.
@@ -921,6 +940,7 @@ $('#btnCloudConnect').onclick=async()=>{
     localStorage.removeItem('spk_local');
     toast('Mit Cloud verbunden ✓');
     await ladeStammdaten(); resetFormular(); await aktualisiereBadge(); renderCloudUI();
+    realtimeStart();
   }catch(err){
     speicherModus=alt; SUPA=null;
     alert('Verbindung fehlgeschlagen: '+err.message);
@@ -928,6 +948,7 @@ $('#btnCloudConnect').onclick=async()=>{
 };
 $('#btnCloudDisconnect').onclick=async()=>{
   if(!confirm('Cloud auf diesem Gerät trennen? Es nutzt dann wieder nur den lokalen Speicher (die Daten in der Cloud bleiben erhalten).'))return;
+  realtimeStop();
   localStorage.removeItem('spk_supa'); localStorage.setItem('spk_local','1'); SUPA=null; speicherModus=lokalerModus();
   toast('Cloud getrennt');
   await ladeStammdaten(); resetFormular(); await aktualisiereBadge(); renderCloudUI();
@@ -1332,6 +1353,7 @@ $('#btnAllesLoeschen').onclick=async()=>{
   try{ await aktualisiereBadge(); }catch(e){}
   renderCloudUI(); setCloudBadge();
   initFertig=true;
+  realtimeStart();
 })();
 
 // Wenn das Gerät wieder online geht: Cloud anstoßen (Status + Nachladen via setCloudOnline)
