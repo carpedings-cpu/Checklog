@@ -207,6 +207,10 @@
     .druck-badge.ok{background:#E6F2E7;color:#2E7D32}
     .druck-badge.warn{background:#FBEAE8;color:#C0392B}
     .druck-fuss{margin-top:8px;font-size:10px;color:#666}
+    .druck-schluss{margin-top:26px;padding-top:14px;border-top:2px solid #004B78;page-break-inside:avoid}
+    .druck-schluss p{font-size:11.5px;color:#333;margin:0 0 26px}
+    .druck-sign{display:flex;justify-content:space-between;gap:24px;font-size:11px;color:#333;text-align:center}
+    .druck-sign > div{flex:1}
   }
 </style>
 </head>
@@ -1458,7 +1462,6 @@ async function drucken(mitFotos){
         ${e.bemerkung?`<tr><td class="k">Bemerkung</td><td>${escapeHtml(e.bemerkung)}</td></tr>`:''}
       </table>
       ${fotoBlock}
-      <div class="druck-fuss">Unterschrift Prüfer/in: ____________________     Unterschrift Zeuge: ____________________</div>
     </div>`);
   }
   const druck=$('#druck');
@@ -1471,7 +1474,15 @@ async function drucken(mitFotos){
         Anzahl Kontrollen: ${geordnet.length} &nbsp;·&nbsp; davon auffällig: ${auff} &nbsp;·&nbsp; ${mitFotos?'mit Fotos (komprimiert)':'ohne Fotos'}
       </div>
     </div>
-    ${bloecke.join('')}`;
+    ${bloecke.join('')}
+    <div class="druck-schluss">
+      <p>Hiermit wird bestätigt, dass die vorstehenden ${geordnet.length} Spindkontrolle(n) wie protokolliert durchgeführt wurden.</p>
+      <div class="druck-sign">
+        <div>____________________<br>Ort, Datum</div>
+        <div>____________________<br>Unterschrift Prüfer/in</div>
+        <div>____________________<br>Unterschrift Zeuge/Zeugin</div>
+      </div>
+    </div>`;
   await warteAufBilder(druck);
   window.print();
 }
