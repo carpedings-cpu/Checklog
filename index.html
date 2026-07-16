@@ -133,13 +133,19 @@
   .segment button.wahl-warn{background:var(--rot);color:#fff}
   .segment button + button{border-left:1px solid #c3d2dc}
 
-  /* ---------- Mehrfach-Auswahl (Zeugen) ---------- */
+  /* ---------- Auswahl-Chips (Prüfer/Zeugen) ---------- */
   .check-gruppe{display:flex;flex-wrap:wrap;gap:8px}
   .check-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #c3d2dc;border-radius:22px;
     padding:8px 14px;font-size:14.5px;cursor:pointer;background:#fff;user-select:none}
   .check-chip input{width:17px;height:17px;accent-color:var(--blau);margin:0}
   .check-chip.an{border-color:var(--blau);background:var(--blau-hell);color:var(--blau-dunkel);font-weight:600}
-  .check-gruppe:empty::after{content:"Noch keine Zeugen hinterlegt – siehe Stammdaten.";color:var(--grau);font-size:12.5px}
+  .check-gruppe:empty::after{content:attr(data-leer);color:var(--grau);font-size:12.5px}
+  /* Inline „hinzufügen" unter den Chips */
+  .chip-add{display:flex;gap:8px;margin-top:10px}
+  .chip-add input{flex:1;min-width:0}
+  .chip-add button{flex:0 0 auto;padding:0 18px;font-size:20px;line-height:1;font-weight:700;
+    border:0;border-radius:9px;background:var(--blau);color:#fff;cursor:pointer;font-family:inherit}
+  .chip-add button:active{background:var(--blau-dunkel)}
 
   /* ---------- Fotos ---------- */
   .foto-hinzu{display:flex;gap:10px;flex-wrap:wrap}
@@ -283,17 +289,10 @@
         </label>
       </div>
 
-      <div class="zwei">
-        <label class="feld">
-          <span>Spindnummer *</span>
-          <input id="fSpind" type="text" inputmode="numeric" placeholder="z. B. 042" required>
-        </label>
-        <label class="feld">
-          <span>Prüfer/in *</span>
-          <input list="prueferliste" id="fPruefer" type="text" placeholder="Kontrolleur/in" required>
-          <datalist id="prueferliste"></datalist>
-        </label>
-      </div>
+      <label class="feld">
+        <span>Spindnummer *</span>
+        <input id="fSpind" type="text" inputmode="numeric" placeholder="z. B. 042" required>
+      </label>
 
       <div class="zwei">
         <label class="feld">
@@ -307,9 +306,23 @@
       </div>
 
       <div class="feld">
+        <span style="display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:5px">Prüfer/in *</span>
+        <div id="prueferAuswahl" class="check-gruppe" data-leer="Noch keine Prüfer/in – unten hinzufügen."></div>
+        <div class="chip-add">
+          <input id="fPrueferNeu" type="text" placeholder="Neue/n Prüfer/in hinzufügen">
+          <button type="button" id="btnPrueferNeu" aria-label="Prüfer/in hinzufügen">＋</button>
+        </div>
+        <input type="hidden" id="fPruefer">
+        <datalist id="prueferliste"></datalist>
+      </div>
+
+      <div class="feld">
         <span style="display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:5px">Zeuge(n) / anwesende Personen</span>
-        <div id="zeugenAuswahl" class="check-gruppe"></div>
-        <input id="fZeugeExtra" type="text" placeholder="Weitere anwesende Person (optional)" style="margin-top:10px">
+        <div id="zeugenAuswahl" class="check-gruppe" data-leer="Noch keine Zeugen – unten hinzufügen."></div>
+        <div class="chip-add">
+          <input id="fZeugeNeu" type="text" placeholder="Weitere Person hinzufügen">
+          <button type="button" id="btnZeugeNeu" aria-label="Person hinzufügen">＋</button>
+        </div>
       </div>
 
       <label class="feld" style="margin-bottom:8px">
@@ -458,7 +471,7 @@
       </label>
       <div class="feld">
         <span style="display:block;font-size:13px;font-weight:600;color:#33474f;margin-bottom:5px">Standard-Zeugen</span>
-        <div id="stdZeugenAuswahl" class="check-gruppe"></div>
+        <div id="stdZeugenAuswahl" class="check-gruppe" data-leer="Erst oben Zeugen speichern."></div>
       </div>
       <button class="btn primaer" id="btnStdSpeichern">Vorbelegung speichern</button>
     </div>
@@ -864,13 +877,18 @@ function renderMitarbeiterListe(){
 }
 if($('#mitarbeiterSuche')) $('#mitarbeiterSuche').oninput=renderMitarbeiterListe;
 
-/* ---- Chips (Mehrfach-Auswahl) ---- */
-function chipHtml(pfx,i,name){
+/* ---- Chips: Mehrfach-Auswahl (Zeugen) und Einfach-Auswahl (Prüfer) ---- */
+function chipHtml(pfx,i,name,typ='checkbox',grp=''){
   const id=pfx+'_'+i;
-  return `<label class="check-chip"><input type="checkbox" id="${id}" value="${escapeHtml(name)}">${escapeHtml(name)}</label>`;
+  const nm=typ==='radio'?` name="${grp}"`:'';
+  return `<label class="check-chip"><input type="${typ}"${nm} id="${id}" value="${escapeHtml(name)}">${escapeHtml(name)}</label>`;
 }
 function syncChip(inp){inp.closest('.check-chip').classList.toggle('an',inp.checked);}
-function bindChips(box){$$('input',box).forEach(inp=>{syncChip(inp);inp.onchange=()=>syncChip(inp);});}
+function bindChips(box){$$('input',box).forEach(inp=>{syncChip(inp);inp.onchange=()=>{
+  // ganze Gruppe aktualisieren (wichtig bei Einfach-Auswahl/Radio)
+  $$('input',box).forEach(syncChip);
+  if(box.id==='prueferAuswahl') $('#fPruefer').value=getChecked(box)[0]||'';
+};});}
 function getChecked(box){return $$('input:checked',box).map(i=>i.value);}
 function setChecked(box,werte){$$('input',box).forEach(inp=>{inp.checked=werte.includes(inp.value);syncChip(inp);});}
 function renderZeugenAuswahl(){
@@ -878,6 +896,46 @@ function renderZeugenAuswahl(){
   box.innerHTML=state.zeugen.map((z,i)=>chipHtml('zg',i,z)).join('');
   bindChips(box);
 }
+function renderPrueferAuswahl(){
+  const box=$('#prueferAuswahl');
+  box.innerHTML=state.pruefer.map((p,i)=>chipHtml('pr',i,p,'radio','prueferwahl')).join('');
+  bindChips(box);
+}
+function setPruefer(name){
+  setChecked($('#prueferAuswahl'), name?[name]:[]);
+  $('#fPruefer').value=name||'';
+}
+async function prueferHinzufuegen(){
+  const inp=$('#fPrueferNeu'); const name=(inp.value||'').trim();
+  if(!name){toast('Bitte Namen eingeben');return;}
+  if(!state.pruefer.includes(name)){
+    state.pruefer.push(name);
+    try{ await setSetting('pruefer',state.pruefer); }
+    catch(err){ state.pruefer.pop(); alert('Speichern fehlgeschlagen (Verbindung?). Bitte erneut versuchen.'); return; }
+    if($('#sPruefer')) $('#sPruefer').value=state.pruefer.join('\n');
+    fuelleDatalists();
+  }
+  renderPrueferAuswahl(); setPruefer(name); inp.value='';
+  toast('Prüfer/in hinzugefügt');
+}
+async function zeugeHinzufuegen(){
+  const inp=$('#fZeugeNeu'); const name=(inp.value||'').trim();
+  if(!name){toast('Bitte Namen eingeben');return;}
+  const vorher=getChecked($('#zeugenAuswahl'));
+  if(!state.zeugen.includes(name)){
+    state.zeugen.push(name);
+    try{ await setSetting('zeugen',state.zeugen); }
+    catch(err){ state.zeugen.pop(); alert('Speichern fehlgeschlagen (Verbindung?). Bitte erneut versuchen.'); return; }
+    if($('#sZeugen')) $('#sZeugen').value=state.zeugen.join('\n');
+    renderStdZeugenAuswahl();
+  }
+  renderZeugenAuswahl(); setChecked($('#zeugenAuswahl'),[...new Set([...vorher,name])]); inp.value='';
+  toast('Person hinzugefügt');
+}
+$('#btnPrueferNeu').onclick=prueferHinzufuegen;
+$('#fPrueferNeu').onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();prueferHinzufuegen();} };
+$('#btnZeugeNeu').onclick=zeugeHinzufuegen;
+$('#fZeugeNeu').onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();zeugeHinzufuegen();} };
 function renderStdZeugenAuswahl(){
   const box=$('#stdZeugenAuswahl');
   box.innerHTML=state.zeugen.map((z,i)=>chipHtml('std',i,z)).join('');
@@ -1053,9 +1111,13 @@ $('#namenUpload').onchange=async(e)=>{
 
 $('#btnPrueferSpeichern').onclick=async()=>{
   state.pruefer=parseZeilen($('#sPruefer').value);
+  // Standard-Prüfer/in auf noch vorhandenen Namen beschränken
+  if(state.standardPruefer && !state.pruefer.includes(state.standardPruefer)) state.standardPruefer='';
   await setSetting('pruefer',state.pruefer);
+  await setSetting('standardPruefer',state.standardPruefer);
   stammdatenDirty=false;
   fuelleDatalists();
+  renderPrueferAuswahl();
   toast('Prüfer gespeichert');
 };
 $('#btnZeugenSpeichern').onclick=async()=>{
@@ -1128,7 +1190,8 @@ $('#btnInvite').onclick=()=>{
    ============================================================ */
 function formVorbelegen(){
   // Standard-Prüfer/in + Standard-Zeugen übernehmen
-  $('#fPruefer').value=state.standardPruefer||'';
+  renderPrueferAuswahl();
+  setPruefer(state.standardPruefer||'');
   renderZeugenAuswahl();
   setChecked($('#zeugenAuswahl'),state.standardZeugen);
 }
@@ -1150,7 +1213,7 @@ function resetFormular(){
   $('#fDatum').value=heuteISO();
   $('#fZeit').value=jetztHM();
   formVorbelegen();
-  $('#fZeugeExtra').value='';
+  $('#fPrueferNeu').value=''; $('#fZeugeNeu').value='';
   state.ergebnis='unauffaellig';
   setzeErgebnisUI();
   state.fotos.forEach(f=>URL.revokeObjectURL(f.url));
@@ -1193,21 +1256,14 @@ $('#formErfassen').onsubmit=async(e)=>{
   const nachname=$('#fNachname').value.trim();
   const vorname=$('#fVorname').value.trim();
   const spind=$('#fSpind').value.trim();
-  const pruefer=$('#fPruefer').value.trim();
+  const pruefer=($('#fPruefer').value||'').trim();
   if(!pnr||!nachname||!spind||!pruefer){toast('Bitte Pflichtfelder ausfüllen (Personalnr., Nachname, Spind, Prüfer/in)');return;}
   const name=baueMitarbeiter(pnr,nachname,vorname);
-
-  // Prüfer ggf. zur Liste lernen
-  if(pruefer && !state.pruefer.includes(pruefer)){
-    state.pruefer.push(pruefer);await setSetting('pruefer',state.pruefer);fuelleDatalists();
-  }
 
   const fotos=[];
   for(const f of state.fotos){fotos.push({dataURL:await blobToDataURL(f.blob)});}
 
   const zeugen=getChecked($('#zeugenAuswahl'));
-  const extraZeuge=$('#fZeugeExtra').value.trim();
-  if(extraZeuge) zeugen.push(extraZeuge);
 
   const eintrag={
     id:(crypto.randomUUID?crypto.randomUUID():'id-'+Date.now()+'-'+Math.round(performance.now())),
